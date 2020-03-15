@@ -81,8 +81,7 @@ impl IOleInPlaceSite for WebBrowser {
 
         self.ole_in_place_object.set(Some(ole_in_place_object));
 
-        // implement oleinplaceobject query interface
-        unimplemented!()
+        S_OK
     }
     unsafe fn on_ui_activate(&self) -> i32 {
         S_OK

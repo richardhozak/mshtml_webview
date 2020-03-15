@@ -67,6 +67,23 @@ struct Userdata {
 }
 
 impl WebBrowser {
+    /// A safe version of `QueryInterface`. If the backing CoClass implements the
+    /// interface `I` then a `Some` containing an `ComRc` pointing to that
+    /// interface will be returned otherwise `None` will be returned.
+    fn get_interface<I: com::ComInterface + ?Sized>(&self) -> Option<ComPtr<I>> {
+        let mut ppv = std::ptr::null_mut::<c_void>();
+        let hr = unsafe { self.query_interface(&I::IID as *const com::sys::IID, &mut ppv) };
+        if FAILED(hr) {
+            assert!(
+                hr == com::sys::E_NOINTERFACE || hr == com::sys::E_POINTER,
+                "QueryInterface returned non-standard error"
+            );
+            return None;
+        }
+        assert!(!ppv.is_null(), "The pointer to the interface returned from a successful call to QueryInterface was null");
+        Some(unsafe { ComPtr::new(ppv as *mut *mut _) })
+    }
+
     fn new() -> Box<WebBrowser> {
         unsafe {
             let h_instance = GetModuleHandleA(ptr::null_mut());
@@ -128,65 +145,58 @@ impl WebBrowser {
                 Cell::new(None),
             );
 
-            let mut iole_client_site = ptr::null_mut();
-            let query_result = web_browser.query_interface(
-                &<dyn IOleClientSite as com::ComInterface>::IID,
-                &mut iole_client_site,
-            );
+            let iole_client_site = web_browser
+                .get_interface::<dyn IOleClientSite>()
+                .expect("iole_client_site query failed");
 
-            if FAILED(query_result) {
-                panic!("iole_client_site query failed");
-            }
+            let istorage = web_browser
+                .get_interface::<dyn IStorage>()
+                .expect("istorage query failed");
 
-            let mut istorage = ptr::null_mut();
-            let query_result = web_browser
-                .query_interface(&<dyn IStorage as com::ComInterface>::IID, &mut istorage);
-
-            if FAILED(query_result) {
-                panic!("istorage query failed");
-            }
-
-            let mut ioleobject = ptr::null_mut();
+            let mut ioleobject_ptr = ptr::null_mut::<c_void>();
             let hresult = OleCreate(
                 &CLSID_WebBrowser,
                 &<dyn IOleObject as com::ComInterface>::IID,
                 1,
                 ptr::null_mut(),
-                iole_client_site,
-                istorage,
-                &mut ioleobject,
+                iole_client_site.as_raw() as _,
+                istorage.as_raw() as _,
+                &mut ioleobject_ptr,
             );
 
             if FAILED(hresult) {
                 panic!("cannot create WebBrowser ole object");
             }
 
-            let ioleobject = ComPtr::<dyn IOleObject>::new(std::mem::transmute(&mut ioleobject));
+            let mut ioleobject = ComPtr::<dyn IOleObject>::new(ioleobject_ptr as *mut *mut _);
 
-            let hresult = OleSetContainedObject(*ioleobject.as_raw() as _, 1);
+            // let hresult = ioleobject.set_client_site(iole_client_site.as_raw() as *mut c_void);
+
+            // if FAILED(hresult) {
+            //     panic!("set_client_site() failed");
+            // }
+
+            let hresult = OleSetContainedObject(ioleobject.as_raw() as _, 1);
 
             if FAILED(hresult) {
                 panic!("OleSetContainedObject() failed");
             }
 
+            web_browser.ole_object = Some(ioleobject.clone());
+
             // this crashes
-            ioleobject.do_verb(
+            let hresult = ioleobject.do_verb(
                 -5,
                 ptr::null_mut(),
-                iole_client_site,
+                iole_client_site.as_raw() as _,
                 -1,
                 handle,
                 &web_browser.rect_obj,
             );
 
             if FAILED(hresult) {
-                panic!("OleSetContainedObject() failed");
+                panic!("ioleobject.do_verb() failed");
             }
-
-            println!("yyeeeettt");
-            web_browser.ole_object = Some(ioleobject);
-
-            ShowWindow(handle, SW_SHOWDEFAULT);
 
             // println!("yeet");
             // let hresult = ioleobject.set_client_site(iole_client_site);
@@ -200,6 +210,8 @@ impl WebBrowser {
             // ioleobject.query_interface(&<dyn IWebBrowser2 as com::ComInterface>::IID, &mut iweb_browser);
 
             // eprintln!("{}", iweb_browser.is_null());
+
+            ShowWindow(handle, SW_SHOWDEFAULT);
 
             web_browser
         }
