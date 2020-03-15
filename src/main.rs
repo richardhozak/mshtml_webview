@@ -2,7 +2,7 @@ use winapi::shared::guiddef::*;
 use winapi::shared::minwindef::*;
 use winapi::shared::ntdef::*;
 use winapi::shared::windef::*;
-use winapi::shared::winerror::{self, E_FAIL, E_NOINTERFACE, E_NOTIMPL, S_OK};
+use winapi::shared::winerror::{self, E_FAIL, E_NOINTERFACE, E_NOTIMPL, FAILED, S_OK};
 use winapi::shared::wtypesbase::*;
 use winapi::um::errhandlingapi::*;
 use winapi::um::libloaderapi::*;
@@ -22,8 +22,8 @@ type LPFORMATETC = *mut FORMATETC;
 
 extern "stdcall" {
     fn OleCreate(
-        rclsid: REFCLSID,
-        riid: REFIID,
+        rclsid: *const com::sys::IID,
+        riid: *const com::sys::IID,
         renderopt: DWORD,
         pFormatEtc: LPFORMATETC,
         p_client_size: *mut c_void,
@@ -275,7 +275,7 @@ impl WebBrowser {
 
             ShowWindow(handle, SW_SHOWDEFAULT);
 
-            WebBrowser::allocate(
+            let web_browser = WebBrowser::allocate(
                 handle,
                 RECT {
                     left: 0,
@@ -283,7 +283,40 @@ impl WebBrowser {
                     right: 300,
                     bottom: 300,
                 },
-            )
+            );
+
+            let mut iole_client_site = ptr::null_mut();
+            let query_result = web_browser.query_interface(
+                &<dyn IOleClientSite as com::ComInterface>::IID,
+                &mut iole_client_site,
+            );
+
+            if FAILED(query_result) {
+                panic!("iole_client_site query failed");
+            }
+
+            let mut istorage = ptr::null_mut();
+            let query_result = web_browser.query_interface(
+                &<dyn IStorage as com::ComInterface>::IID,
+                &mut istorage,
+            );
+
+            if FAILED(query_result) {
+                panic!("istorage query failed");
+            }
+
+            let mut ioleobject = ptr::null_mut();
+            OleCreate(
+                &<dyn IWebBrowser2 as com::ComInterface>::IID as *const _,
+                &<dyn IOleObject as com::ComInterface>::IID as *const _,
+                1,
+                ptr::null_mut(),
+                iole_client_site,
+                istorage,
+                &mut ioleobject,
+            );
+
+            web_browser
         }
     }
 }
@@ -680,3 +713,6 @@ unsafe fn from_wstring(wide: *const u16) -> OsString {
     }
     unreachable!()
 }
+
+#[com_interface("8856F961-340A-11D0-A96B-00C04FD705A2")]
+pub trait IWebBrowser2: IUnknown {}
