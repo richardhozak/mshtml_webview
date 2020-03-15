@@ -54,15 +54,15 @@ extern "system" {
 
 #[co_class(implements(IOleClientSite, IOleInPlaceSite, IStorage))]
 struct WebBrowser {
-    hwnd_parent: HWND,
-    rect_obj: RECT,
-    ole_object: Option<ComPtr<dyn IOleObject>>,
-    ole_in_place_object: RefCell<Option<ComPtr<dyn IOleInPlaceObject>>>,
-    web_browser: Option<ComPtr<dyn IWebBrowser>>,
+    inner: Option<WebBrowserInner>,
 }
 
-struct Userdata {
-    h_instance: HINSTANCE,
+struct WebBrowserInner {
+    hwnd_parent: HWND,
+    rect_obj: RECT,
+    ole_object: ComPtr<dyn IOleObject>,
+    ole_in_place_object: ComPtr<dyn IOleInPlaceObject>,
+    web_browser: ComPtr<dyn IWebBrowser>,
 }
 
 impl WebBrowser {
@@ -84,70 +84,43 @@ impl WebBrowser {
     }
 
     fn new() -> Box<WebBrowser> {
+        WebBrowser::allocate(None)
+    }
+
+    fn set_rect(&self) {
+        // let mut rect: RECT = Default::default();
+        // unsafe {
+        //     GetClientRect(self.hwnd_parent, &mut rect);
+        // }
+        // rect.top = 45;
+        // unsafe {
+        //     self.ole_in_place_object
+        //         .as_ref()
+        //         .unwrap()
+        //         .set_object_rects(&rect, &rect);
+        // }
+    }
+
+    fn navigate(&self, url: &str) {
+        let mut wstring = to_wstring(url);
         unsafe {
-            let h_instance = GetModuleHandleA(ptr::null_mut());
-            if h_instance.is_null() {
-                panic!("could not retrieve module handle");
-            }
-            let class_name = to_wstring("webview");
-            let class = WNDCLASSW {
-                style: 0,
-                lpfnWndProc: Some(wndproc),
-                cbClsExtra: 0,
-                cbWndExtra: 0,
-                hInstance: h_instance,
-                hIcon: ptr::null_mut(),
-                hCursor: LoadCursorW(ptr::null_mut(), IDC_ARROW),
-                hbrBackground: COLOR_WINDOW as _,
-                lpszMenuName: ptr::null(),
-                lpszClassName: class_name.as_ptr(),
-            };
-
-            if RegisterClassW(&class) == 0 {
-                // ignore the "Class already exists" error for multiple windows
-                if GetLastError() as u32 != 1410 {
-                    OleUninitialize();
-                    panic!("could not register window class {}", GetLastError() as u32);
-                }
-            }
-
-            let userdata = Box::new(Userdata { h_instance });
-            let userdata = Box::into_raw(userdata);
-
-            let title = to_wstring("mshtml_webview");
-            let handle = CreateWindowExW(
-                0,
-                class_name.as_ptr(),
-                title.as_ptr(),
-                WS_OVERLAPPEDWINDOW,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                HWND_DESKTOP,
+            self.inner.as_ref().unwrap().web_browser.navigate(
+                wstring.as_mut_ptr(),
                 ptr::null_mut(),
-                h_instance,
-                userdata as _, // TODO we need to call Box::into_raw when quiting so we do not leak
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
             );
+        }
+    }
 
-            let mut web_browser = WebBrowser::allocate(
-                handle,
-                RECT {
-                    left: 0,
-                    top: 0,
-                    right: 300,
-                    bottom: 300,
-                },
-                None,
-                RefCell::new(None),
-                None,
-            );
-
-            let iole_client_site = web_browser
+    fn initialize(&mut self, _h_instance: HINSTANCE, h_wnd: HWND, rect: RECT) {
+        unsafe {
+            let iole_client_site = self
                 .get_interface::<dyn IOleClientSite>()
                 .expect("iole_client_site query failed");
 
-            let istorage = web_browser
+            let istorage = self
                 .get_interface::<dyn IStorage>()
                 .expect("istorage query failed");
 
@@ -167,84 +140,45 @@ impl WebBrowser {
             }
 
             let ioleobject = ComPtr::<dyn IOleObject>::new(ioleobject_ptr as *mut *mut _);
-
-            // let hresult = ioleobject.set_client_site(iole_client_site.as_raw() as *mut c_void);
-
-            // if FAILED(hresult) {
-            //     panic!("set_client_site() failed");
-            // }
-
             let hresult = OleSetContainedObject(ioleobject.as_raw() as _, 1);
 
             if FAILED(hresult) {
                 panic!("OleSetContainedObject() failed");
             }
 
-            web_browser.ole_object = Some(ioleobject.clone());
+            let ole_in_place_object = ioleobject
+                .get_interface::<dyn IOleInPlaceObject>()
+                .expect("cannot query ole_in_place_object");
+
+            ole_in_place_object.set_object_rects(&rect, &rect);
+            let mut hwnd_control: HWND = ptr::null_mut();
+            ole_in_place_object.get_window(&mut hwnd_control);
+            assert!(!hwnd_control.is_null(), "in place object hwnd is null");
+
+            let iweb_browser = ioleobject
+                .get_interface::<dyn IWebBrowser>()
+                .expect("get interface IWebBrowser2 failed");
+
+            self.inner = Some(WebBrowserInner {
+                hwnd_parent: h_wnd,
+                rect_obj: rect,
+                ole_object: ioleobject.clone(),
+                ole_in_place_object,
+                web_browser: iweb_browser
+            });
 
             let hresult = ioleobject.do_verb(
                 -5,
                 ptr::null_mut(),
                 iole_client_site.as_raw() as _,
                 -1,
-                handle,
-                &web_browser.rect_obj,
+                h_wnd,
+                &rect,
             );
 
             if FAILED(hresult) {
                 panic!("ioleobject.do_verb() failed");
             }
-
-            let iweb_browser = ioleobject
-                .get_interface::<dyn IWebBrowser>()
-                .expect("get interface IWebBrowser2 failed");
-
-            web_browser.web_browser = Some(iweb_browser);
-
-            // println!("yeet");
-            // let hresult = ioleobject.set_client_site(iole_client_site);
-
-            // if FAILED(hresult) {
-            //     panic!("ioleobject.set_client_site() failed");
-            // }
-
-            //let iweb_browser = ioleobject.get_interface::<dyn IWebBrowser2>();
-            // let mut iweb_browser = ptr::null_mut();
-            // ioleobject.query_interface(&<dyn IWebBrowser2 as com::ComInterface>::IID, &mut iweb_browser);
-
-            // eprintln!("{}", iweb_browser.is_null());
-
-            ShowWindow(handle, SW_SHOWDEFAULT);
-
-            web_browser
-        }
-    }
-
-    fn set_rect(&self) {
-        let mut rect: RECT = Default::default();
-        unsafe {
-            GetClientRect(self.hwnd_parent, &mut rect);
-        }
-        rect.top = 45;
-        unsafe {
-            self.ole_in_place_object
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .set_object_rects(&rect, &rect);
-        }
-    }
-
-    fn navigate(&self, url: &str) {
-        let mut wstring = to_wstring(url);
-        unsafe {
-            self.web_browser.as_ref().unwrap().navigate(
-                wstring.as_mut_ptr(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-            );
         }
     }
 }
@@ -262,8 +196,53 @@ fn main() {
             panic!("could not initialize ole");
         }
 
-        let wb = WebBrowser::new();
+        let h_instance = GetModuleHandleA(ptr::null_mut());
+        if h_instance.is_null() {
+            panic!("could not retrieve module handle");
+        }
+        let class_name = to_wstring("webview");
+        let class = WNDCLASSW {
+            style: 0,
+            lpfnWndProc: Some(wndproc),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: h_instance,
+            hIcon: ptr::null_mut(),
+            hCursor: LoadCursorW(ptr::null_mut(), IDC_ARROW),
+            hbrBackground: COLOR_WINDOW as _,
+            lpszMenuName: ptr::null(),
+            lpszClassName: class_name.as_ptr(),
+        };
+
+        if RegisterClassW(&class) == 0 {
+            // ignore the "Class already exists" error for multiple windows
+            if GetLastError() as u32 != 1410 {
+                OleUninitialize();
+                panic!("could not register window class {}", GetLastError() as u32);
+            }
+        }
+
+        let title = to_wstring("mshtml_webview");
+        let h_wnd = CreateWindowExW(
+            0,
+            class_name.as_ptr(),
+            title.as_ptr(),
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            HWND_DESKTOP,
+            ptr::null_mut(),
+            h_instance,
+            ptr::null_mut(),
+        );
+
+        let mut wb = WebBrowser::new();
+        wb.initialize(h_instance, h_wnd, RECT {left: 0, right: 300, top: 0, bottom: 300});
         wb.navigate("http://google.com");
+
+        ShowWindow(h_wnd, SW_SHOWDEFAULT);
 
         let mut message: MSG = Default::default();
         while GetMessageW(&mut message, ptr::null_mut(), 0, 0) > 0 {
@@ -286,90 +265,92 @@ unsafe extern "system" fn wndproc(
 ) -> LRESULT {
     match message {
         WM_CREATE => {
-            let userdata: *mut Userdata = lparam as _;
-            if userdata.is_null() {
-                eprintln!("userdata is null");
-                return DefWindowProcW(hwnd, message, wparam, lparam);
-            }
-            let userdata = userdata.as_mut().unwrap();
+            // let userdata: *mut Userdata = lparam as _;
+            // if userdata.is_null() {
+            //     eprintln!("userdata is null");
+            //     return DefWindowProcW(hwnd, message, wparam, lparam);
+            // }
+            // let userdata = userdata.as_mut().unwrap();
 
-            println!("wm create");
-            CreateWindowExW(
-                0,
-                to_wstring("BUTTON").as_ptr(),
-                to_wstring("<<< Back").as_ptr(),
-                WS_CHILD | WS_VISIBLE,
-                5,
-                5,
-                80,
-                30,
-                hwnd,
-                BTN_BACK as _,
-                userdata.h_instance,
-                ptr::null_mut(),
-            );
-
-            CreateWindowExW(
-                0,
-                to_wstring("BUTTON").as_ptr(),
-                to_wstring("Next >>>").as_ptr(),
-                WS_CHILD | WS_VISIBLE,
-                90,
-                5,
-                80,
-                30,
-                hwnd,
-                BTN_NEXT as _,
-                userdata.h_instance,
-                ptr::null_mut(),
-            );
-
-            CreateWindowExW(
-                0,
-                to_wstring("BUTTON").as_ptr(),
-                to_wstring("Refresh").as_ptr(),
-                WS_CHILD | WS_VISIBLE,
-                175,
-                5,
-                80,
-                30,
-                hwnd,
-                BTN_REFRESH as _,
-                userdata.h_instance,
-                ptr::null_mut(),
-            );
-
-            // let edit_handle = CreateWindowExW(
+            // println!("wm create");
+            // CreateWindowExW(
             //     0,
-            //     to_wstring("EDIT").as_ptr(),
-            //     to_wstring("http://google.com/").as_ptr(),
-            //     WS_CHILD | WS_VISIBLE | WS_BORDER,
-            //     260,
-            //     10,
-            //     200,
-            //     20,
+            //     to_wstring("BUTTON").as_ptr(),
+            //     to_wstring("<<< Back").as_ptr(),
+            //     WS_CHILD | WS_VISIBLE,
+            //     5,
+            //     5,
+            //     80,
+            //     30,
             //     hwnd,
-            //     ptr::null_mut(),
+            //     BTN_BACK as _,
             //     userdata.h_instance,
-            //     lparam as _,
+            //     ptr::null_mut(),
             // );
 
-            // userdata.hwnd_addressbar = edit_handle;
+            // CreateWindowExW(
+            //     0,
+            //     to_wstring("BUTTON").as_ptr(),
+            //     to_wstring("Next >>>").as_ptr(),
+            //     WS_CHILD | WS_VISIBLE,
+            //     90,
+            //     5,
+            //     80,
+            //     30,
+            //     hwnd,
+            //     BTN_NEXT as _,
+            //     userdata.h_instance,
+            //     ptr::null_mut(),
+            // );
 
-            CreateWindowExW(
-                0,
-                to_wstring("BUTTON").as_ptr(),
-                to_wstring("Go").as_ptr(),
-                WS_CHILD | WS_VISIBLE,
-                465,
-                5,
-                80,
-                30,
-                hwnd,
-                BTN_GO as _,
-                userdata.h_instance,
-                ptr::null_mut(),
-            );
+            // CreateWindowExW(
+            //     0,
+            //     to_wstring("BUTTON").as_ptr(),
+            //     to_wstring("Refresh").as_ptr(),
+            //     WS_CHILD | WS_VISIBLE,
+            //     175,
+            //     5,
+            //     80,
+            //     30,
+            //     hwnd,
+            //     BTN_REFRESH as _,
+            //     userdata.h_instance,
+            //     ptr::null_mut(),
+            // );
+
+            // // let edit_handle = CreateWindowExW(
+            // //     0,
+            // //     to_wstring("EDIT").as_ptr(),
+            // //     to_wstring("http://google.com/").as_ptr(),
+            // //     WS_CHILD | WS_VISIBLE | WS_BORDER,
+            // //     260,
+            // //     10,
+            // //     200,
+            // //     20,
+            // //     hwnd,
+            // //     ptr::null_mut(),
+            // //     userdata.h_instance,
+            // //     lparam as _,
+            // // );
+
+            // // userdata.hwnd_addressbar = edit_handle;
+
+            // CreateWindowExW(
+            //     0,
+            //     to_wstring("BUTTON").as_ptr(),
+            //     to_wstring("Go").as_ptr(),
+            //     WS_CHILD | WS_VISIBLE,
+            //     465,
+            //     5,
+            //     80,
+            //     30,
+            //     hwnd,
+            //     BTN_GO as _,
+            //     userdata.h_instance,
+            //     ptr::null_mut(),
+            // );
+            // 1
+
             1
         }
         WM_COMMAND => {

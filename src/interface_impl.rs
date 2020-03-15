@@ -3,7 +3,7 @@ use super::OleLockRunning;
 use super::WebBrowser;
 
 use com::{interfaces::IUnknown, ComPtr};
-use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, FAILED, S_OK};
+use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, FAILED, E_PENDING, S_OK};
 use winapi::shared::windef::HWND;
 
 use std::ptr;
@@ -44,7 +44,12 @@ impl IOleClientSite for WebBrowser {
 
 impl IOleWindow for WebBrowser {
     unsafe fn get_window(&self, phwnd: *mut *mut winapi::shared::windef::HWND__) -> i32 {
-        *phwnd = self.hwnd_parent;
+        if self.inner.is_none() {
+            return E_PENDING;
+        }
+
+        *phwnd = self.inner.as_ref().unwrap().hwnd_parent;
+
         S_OK
     }
     unsafe fn context_sensitive_help(&self, _: i32) -> i32 {
@@ -57,26 +62,6 @@ impl IOleInPlaceSite for WebBrowser {
         S_OK
     }
     unsafe fn on_in_place_activate(&self) -> i32 {
-        eprintln!("on_in_place_activate");
-
-        let ole_object = self
-            .ole_object
-            .as_ref()
-            .expect("webbrowser incorrectly initialized, ole_object is not present");
-
-        OleLockRunning(ole_object.as_raw() as _, 1, 0);
-
-        let ole_in_place_object = ole_object
-            .get_interface::<dyn IOleInPlaceObject>()
-            .expect("cannot query ole_in_place_object");
-
-        ole_in_place_object.set_object_rects(&self.rect_obj, &self.rect_obj);
-        let mut hwnd_control: HWND = ptr::null_mut();
-        ole_in_place_object.get_window(&mut hwnd_control);
-        assert!(!hwnd_control.is_null(), "in place object hwnd is null");
-
-        *self.ole_in_place_object.borrow_mut() = Some(ole_in_place_object);
-
         S_OK
     }
     unsafe fn on_ui_activate(&self) -> i32 {
@@ -93,14 +78,14 @@ impl IOleInPlaceSite for WebBrowser {
         eprintln!("get window context");
         *pp_frame = ptr::null_mut();
         *pp_doc = ptr::null_mut();
-        (*lprc_pos_rect).left = self.rect_obj.left;
-        (*lprc_pos_rect).top = self.rect_obj.top;
-        (*lprc_pos_rect).right = self.rect_obj.right;
-        (*lprc_pos_rect).bottom = self.rect_obj.bottom;
+        (*lprc_pos_rect).left = self.inner.as_ref().unwrap().rect_obj.left;
+        (*lprc_pos_rect).top = self.inner.as_ref().unwrap().rect_obj.top;
+        (*lprc_pos_rect).right = self.inner.as_ref().unwrap().rect_obj.right;
+        (*lprc_pos_rect).bottom = self.inner.as_ref().unwrap().rect_obj.bottom;
         *lprc_clip_rect = *lprc_pos_rect;
 
         (*lp_frame_info).fMDIApp = 0;
-        (*lp_frame_info).hwndFrame = self.hwnd_parent;
+        (*lp_frame_info).hwndFrame = self.inner.as_ref().unwrap().hwnd_parent;
         (*lp_frame_info).haccel = ptr::null_mut();
         (*lp_frame_info).cAccelEntries = 0;
         S_OK
