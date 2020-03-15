@@ -7,10 +7,8 @@ use winapi::um::libloaderapi::*;
 use winapi::um::objidl::FORMATETC;
 use winapi::um::ole2::*;
 use winapi::um::winuser::*;
-// use winapi::um::objidlbase::IEnumUnknown;
 use com::{co_class, interfaces::iunknown::IUnknown, ComPtr};
 use libc::c_void;
-use std::cell::RefCell;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
@@ -43,7 +41,6 @@ extern "stdcall" {
     ) -> HRESULT;
 
     fn OleSetContainedObject(p_unknown: *mut c_void, f_contained: BOOL) -> HRESULT;
-    fn OleLockRunning(p_unknown: *mut c_void, f_lock: BOOL, f_last_unlock_closes: BOOL) -> HRESULT;
 
     fn ExitProcess(exit_code: UINT);
 }
@@ -59,8 +56,7 @@ struct WebBrowser {
 
 struct WebBrowserInner {
     hwnd_parent: HWND,
-    rect_obj: RECT,
-    ole_object: ComPtr<dyn IOleObject>,
+    rect: RECT,
     ole_in_place_object: ComPtr<dyn IOleInPlaceObject>,
     web_browser: ComPtr<dyn IWebBrowser>,
 }
@@ -174,16 +170,15 @@ impl WebBrowser {
             ole_in_place_object.get_window(&mut hwnd_control);
             assert!(!hwnd_control.is_null(), "in place object hwnd is null");
 
-            let iweb_browser = ioleobject
+            let web_browser = ioleobject
                 .get_interface::<dyn IWebBrowser>()
-                .expect("get interface IWebBrowser2 failed");
+                .expect("get interface IWebBrowser failed");
 
             self.inner = Some(WebBrowserInner {
                 hwnd_parent: h_wnd,
-                rect_obj: rect,
-                ole_object: ioleobject.clone(),
+                rect,
                 ole_in_place_object,
-                web_browser: iweb_browser
+                web_browser,
             });
 
             let hresult = ioleobject.do_verb(
@@ -259,7 +254,15 @@ fn main() {
         );
 
         let mut wb = WebBrowser::new();
-        wb.initialize(h_wnd, RECT {left: 0, right: 300, top: 45, bottom: 300});
+        wb.initialize(
+            h_wnd,
+            RECT {
+                left: 0,
+                right: 300,
+                top: 45,
+                bottom: 300,
+            },
+        );
         wb.navigate("http://google.com");
 
         let wb_ptr = Box::into_raw(wb);
@@ -297,7 +300,6 @@ unsafe extern "system" fn wndproc(
                 panic!("could not retrieve module handle");
             }
 
-            println!("wm create");
             CreateWindowExW(
                 0,
                 to_wstring("BUTTON").as_ptr(),
@@ -376,7 +378,8 @@ unsafe extern "system" fn wndproc(
             1
         }
         WM_COMMAND => {
-            let wb_ptr: *mut WebBrowser = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+            let wb_ptr: *mut WebBrowser =
+                std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
             if wb_ptr.is_null() {
                 return 1;
             }
@@ -396,7 +399,7 @@ unsafe extern "system" fn wndproc(
                     }
 
                     let input = OsString::from_wide(&buf[..len + 1]);
-                    (*wb_ptr).navigate(&input.to_string_lossy());;
+                    (*wb_ptr).navigate(&input.to_string_lossy());
                 }
                 _ => {}
             }
@@ -404,7 +407,8 @@ unsafe extern "system" fn wndproc(
             1
         }
         WM_SIZE => {
-            let wb_ptr: *mut WebBrowser = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+            let wb_ptr: *mut WebBrowser =
+                std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
             if wb_ptr.is_null() {
                 return 1;
             }

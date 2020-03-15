@@ -1,10 +1,7 @@
 use super::interface::*;
-use super::OleLockRunning;
 use super::WebBrowser;
 
-use com::{interfaces::IUnknown, ComPtr};
-use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, FAILED, E_PENDING, S_OK};
-use winapi::shared::windef::HWND;
+use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, E_PENDING, S_OK};
 
 use std::ptr;
 
@@ -75,13 +72,9 @@ impl IOleInPlaceSite for WebBrowser {
         lprc_clip_rect: *mut winapi::shared::windef::RECT,
         lp_frame_info: *mut OLEINPLACEFRAMEINFO,
     ) -> i32 {
-        eprintln!("get window context");
         *pp_frame = ptr::null_mut();
         *pp_doc = ptr::null_mut();
-        (*lprc_pos_rect).left = self.inner.as_ref().unwrap().rect_obj.left;
-        (*lprc_pos_rect).top = self.inner.as_ref().unwrap().rect_obj.top;
-        (*lprc_pos_rect).right = self.inner.as_ref().unwrap().rect_obj.right;
-        (*lprc_pos_rect).bottom = self.inner.as_ref().unwrap().rect_obj.bottom;
+        *lprc_pos_rect = self.inner.as_ref().unwrap().rect;
         *lprc_clip_rect = *lprc_pos_rect;
 
         (*lp_frame_info).fMDIApp = 0;
