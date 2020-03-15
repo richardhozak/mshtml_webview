@@ -98,7 +98,7 @@ impl WebBrowser {
                 hInstance: h_instance,
                 hIcon: ptr::null_mut(),
                 hCursor: LoadCursorW(ptr::null_mut(), IDC_ARROW),
-                hbrBackground: ptr::null_mut(),
+                hbrBackground: COLOR_WINDOW as _,
                 lpszMenuName: ptr::null(),
                 lpszClassName: class_name.as_ptr(),
             };
