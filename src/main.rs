@@ -58,7 +58,7 @@ struct WebBrowser {
     rect_obj: RECT,
     ole_object: Option<ComPtr<dyn IOleObject>>,
     ole_in_place_object: RefCell<Option<ComPtr<dyn IOleInPlaceObject>>>,
-    web_browser2: Option<ComPtr<dyn IWebBrowser2>>,
+    web_browser: Option<ComPtr<dyn IWebBrowser>>,
 }
 
 struct Userdata {
@@ -111,9 +111,7 @@ impl WebBrowser {
                 }
             }
 
-            let userdata = Box::new(Userdata {
-                h_instance,
-            });
+            let userdata = Box::new(Userdata { h_instance });
             let userdata = Box::into_raw(userdata);
 
             let title = to_wstring("mshtml_webview");
@@ -197,11 +195,11 @@ impl WebBrowser {
                 panic!("ioleobject.do_verb() failed");
             }
 
-            let web_browser2 = ioleobject
-                .get_interface::<dyn IWebBrowser2>()
+            let iweb_browser = ioleobject
+                .get_interface::<dyn IWebBrowser>()
                 .expect("get interface IWebBrowser2 failed");
 
-            web_browser.web_browser2 = Some(web_browser2);
+            web_browser.web_browser = Some(iweb_browser);
 
             // println!("yeet");
             // let hresult = ioleobject.set_client_site(iole_client_site);
@@ -236,6 +234,19 @@ impl WebBrowser {
                 .set_object_rects(&rect, &rect);
         }
     }
+
+    fn navigate(&self, url: &str) {
+        let mut wstring = to_wstring(url);
+        unsafe {
+            self.web_browser.as_ref().unwrap().navigate(
+                wstring.as_mut_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            );
+        }
+    }
 }
 
 // #[com_interface(0000011b-0000-0000-C000-000000000046)]
@@ -251,7 +262,8 @@ fn main() {
             panic!("could not initialize ole");
         }
 
-        let _ = WebBrowser::new();
+        let wb = WebBrowser::new();
+        wb.navigate("http://google.com");
 
         let mut message: MSG = Default::default();
         while GetMessageW(&mut message, ptr::null_mut(), 0, 0) > 0 {

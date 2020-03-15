@@ -1,14 +1,16 @@
+use com::{com_interface, interfaces::IUnknown};
+use libc::{c_char, c_void};
 use winapi::shared::guiddef::*;
 use winapi::shared::minwindef::*;
 use winapi::shared::ntdef::*;
 use winapi::shared::windef::*;
 use winapi::shared::wtypesbase::*;
-use winapi::um::objidl::{SNB};
+use winapi::shared::wtypes::BSTR;
+use winapi::um::oaidl::{DISPID, DISPPARAMS, EXCEPINFO, VARIANT};
+use winapi::um::objidl::SNB;
 use winapi::um::objidlbase::STATSTG;
 use winapi::um::wingdi::LOGPALETTE;
 use winapi::um::winuser::*;
-use com::{com_interface, interfaces::IUnknown};
-use libc::{c_void, c_char};
 
 #[com_interface("00000118-0000-0000-C000-000000000046")]
 pub trait IOleClientSite: IUnknown {
@@ -210,5 +212,115 @@ impl Default for OLEINPLACEFRAMEINFO {
 // #[com_interface("8856F961-340A-11D0-A96B-00C04FD705A2")] // CLSID
 // pub trait WebBrowserCLS : IUnknown {}
 
-#[com_interface("D30C1661-CDAF-11d0-8A3E-00C04FC9E26E")]
-pub trait IWebBrowser2: IUnknown {}
+#[com_interface("00020400-0000-0000-C000-000000000046")]
+pub trait IDispatch: IUnknown {
+    unsafe fn get_type_info_count(&self, pctinfo: *mut UINT) -> HRESULT;
+    unsafe fn get_type_info(
+        &self,
+        i_ti_info: UINT,
+        icid: LCID,
+        pp_ti_info: *mut *mut c_void,
+    ) -> HRESULT;
+    unsafe fn get_ids_of_names(
+        &self,
+        riid: *const IID,
+        rgsz_names: *mut LPOLESTR,
+        c_names: UINT,
+        lcid: LCID,
+        rg_disp_id: *mut DISPID,
+    ) -> HRESULT;
+    unsafe fn invoke(
+        &self,
+        disp_id_member: DISPID,
+        riid: *const IID,
+        lcid: LCID,
+        w_flags: WORD,
+        p_disp_params: *mut DISPPARAMS,
+        p_var_result: *mut VARIANT,
+        p_excep_info: *mut EXCEPINFO,
+        pu_arg_err: *mut UINT,
+    ) -> HRESULT;
+}
+
+#[com_interface("EAB22AC1-30C1-11CF-A7EB-0000C05BAE0B")]
+pub trait IWebBrowser: IDispatch {
+    unsafe fn go_back(&self) -> HRESULT;
+    unsafe fn go_forward(&self) -> HRESULT;
+    unsafe fn go_home(&self) -> HRESULT;
+    unsafe fn go_search(&self) -> HRESULT;
+    unsafe fn navigate(
+        &self,
+        url: BSTR,
+        flags: *mut VARIANT,
+        target_frame_name: *mut VARIANT,
+        post_data: *mut VARIANT,
+        headers: *mut VARIANT,
+    ) -> HRESULT;
+    unsafe fn refresh(&self) -> HRESULT;
+    unsafe fn refresh2(&self) -> HRESULT;
+    unsafe fn stop(&self) -> HRESULT;
+    unsafe fn get_application(&self) -> HRESULT;
+    unsafe fn get_parent(&self) -> HRESULT;
+    unsafe fn get_container(&self) -> HRESULT;
+    unsafe fn get_document(&self) -> HRESULT;
+    unsafe fn get_top_level_container(&self) -> HRESULT;
+    unsafe fn get_type(&self) -> HRESULT;
+    unsafe fn get_left(&self) -> HRESULT;
+    unsafe fn put_left(&self) -> HRESULT;
+    unsafe fn get_top(&self) -> HRESULT;
+    unsafe fn put_top(&self) -> HRESULT;
+    unsafe fn get_width(&self) -> HRESULT;
+    unsafe fn put_width(&self) -> HRESULT;
+    unsafe fn get_height(&self) -> HRESULT;
+    unsafe fn put_height(&self) -> HRESULT;
+    unsafe fn get_location_name(&self) -> HRESULT;
+    unsafe fn get_location_url(&self) -> HRESULT;
+    unsafe fn get_busy(&self) -> HRESULT;
+}
+
+// #[com_interface("0002DF05-0000-0000-C000-000000000046")]
+// pub trait IWebBrowserApp : IWebBrowser {
+//     unsafe fn quit(&self) -> HRESULT;
+//     unsafe fn client_to_window(&self) -> HRESULT;
+//     unsafe fn put_property(&self) -> HRESULT;
+//     unsafe fn get_property(&self) -> HRESULT;
+//     unsafe fn get_name(&self) -> HRESULT;
+//     unsafe fn get_hwnd(&self) -> HRESULT;
+//     unsafe fn get_full_name(&self) -> HRESULT;
+//     unsafe fn get_path(&self) -> HRESULT;
+//     unsafe fn get_visible(&self) -> HRESULT;
+//     unsafe fn put_visible(&self) -> HRESULT;
+//     unsafe fn get_status_bar(&self) -> HRESULT;
+//     unsafe fn put_status_bar(&self) -> HRESULT;
+//     unsafe fn get_status_text(&self) -> HRESULT;
+//     unsafe fn put_status_text(&self) -> HRESULT;
+//     unsafe fn get_tool_bar(&self) -> HRESULT;
+//     unsafe fn put_tool_bar(&self) -> HRESULT;
+//     unsafe fn get_menu_bar(&self) -> HRESULT;
+//     unsafe fn put_menu_bar(&self) -> HRESULT;
+//     unsafe fn get_full_screen(&self) -> HRESULT;
+//     unsafe fn put_full_screen(&self) -> HRESULT;
+// }
+
+// #[com_interface("D30C1661-CDAF-11d0-8A3E-00C04FC9E26E")]
+// pub trait IWebBrowser2: IWebBrowserApp {
+//     unsafe fn navigate2(&self) -> HRESULT;
+//     unsafe fn query_status_wb(&self) -> HRESULT;
+//     unsafe fn exec_wb(&self) -> HRESULT;
+//     unsafe fn show_browser_bar(&self) -> HRESULT;
+//     unsafe fn get_ready_state(&self) -> HRESULT;
+//     unsafe fn get_offline(&self) -> HRESULT;
+//     unsafe fn put_offline(&self) -> HRESULT;
+//     unsafe fn get_silent(&self) -> HRESULT;
+//     unsafe fn put_silent(&self) -> HRESULT;
+//     unsafe fn get_register_as_browser(&self) -> HRESULT;
+//     unsafe fn put_register_as_browser(&self) -> HRESULT;
+//     unsafe fn get_register_as_drop_target(&self) -> HRESULT;
+//     unsafe fn put_register_as_drop_target(&self) -> HRESULT;
+//     unsafe fn get_theater_mode(&self) -> HRESULT;
+//     unsafe fn put_theater_mode(&self) -> HRESULT;
+//     unsafe fn get_address_bar(&self) -> HRESULT;
+//     unsafe fn put_address_bar(&self) -> HRESULT;
+//     unsafe fn get_resizable(&self) -> HRESULT;
+//     unsafe fn put_resizable(&self) -> HRESULT;
+// }
