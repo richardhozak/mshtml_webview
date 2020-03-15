@@ -2,16 +2,17 @@ use winapi::shared::guiddef::*;
 use winapi::shared::minwindef::*;
 use winapi::shared::ntdef::*;
 use winapi::shared::windef::*;
-use winapi::shared::winerror;
+use winapi::shared::winerror::{self, NOERROR};
 use winapi::shared::wtypesbase::*;
 use winapi::um::errhandlingapi::*;
 use winapi::um::libloaderapi::*;
-use winapi::um::objidl::{IMoniker, FORMATETC};
+use winapi::um::objidl::{IMoniker, FORMATETC, SNB};
+use winapi::um::objidlbase::STATSTG;
 use winapi::um::ole2::*;
 use winapi::um::wingdi::LOGPALETTE;
 use winapi::um::winuser::*;
 // use winapi::um::objidlbase::IEnumUnknown;
-use com::{com_interface, interfaces::iunknown::IUnknown, InterfacePtr};
+use com::{co_class, com_interface, interfaces::iunknown::IUnknown, InterfacePtr};
 use std::ffi::OsStr;
 use std::os::raw::{c_char, c_void};
 use std::os::windows::ffi::OsStrExt;
@@ -110,9 +111,284 @@ pub trait IOleInPlaceObject: IOleWindow {
     unsafe fn reactivate_and_undo(&self) -> HRESULT;
 }
 
+#[com_interface(00000119-0000-0000-C000-000000000046)]
+pub trait IOleInPlaceSite: IOleWindow {
+    unsafe fn can_in_place_activate(&self) -> HRESULT;
+    unsafe fn on_in_place_activate(&self) -> HRESULT;
+    unsafe fn on_ui_activate(&self) -> HRESULT;
+    unsafe fn get_window_context(
+        &self,
+        pp_frame: *mut *mut c_void,
+        pp_doc: *mut *mut c_void,
+        lprc_pos_rect: LPRECT,
+        lprc_clip_rect: LPRECT,
+        lp_frame_info: *mut c_void,
+    ) -> HRESULT;
+    unsafe fn scroll(&self, scroll_extant: SIZE) -> HRESULT;
+    unsafe fn on_ui_deactivate(&self, f_undoable: BOOL) -> HRESULT;
+    unsafe fn on_in_place_deactivate(&self) -> HRESULT;
+    unsafe fn discard_undo_state(&self) -> HRESULT;
+    unsafe fn deactivate_and_undo(&self) -> HRESULT;
+    unsafe fn on_pos_rect_change(&self, lprc_post_rect: LPRECT) -> HRESULT;
+}
+
+#[com_interface(0000000b-0000-0000-C000-000000000046)]
+pub trait IStorage: IUnknown {
+    unsafe fn create_stream(
+        &self,
+        pwcs_name: *const WCHAR,
+        grf_mode: DWORD,
+        reserved1: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut c_void,
+    ) -> HRESULT;
+    unsafe fn open_stream(
+        &self,
+        pwcs_name: *const WCHAR,
+        reserved1: *mut c_void,
+        grf_mode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut c_void,
+    ) -> HRESULT;
+    unsafe fn create_storage(
+        &self,
+        pwcs_name: *const WCHAR,
+        grf_mode: DWORD,
+        reserved1: DWORD,
+        reserved2: DWORD,
+        ppstg: *mut *mut c_void,
+    ) -> HRESULT;
+    unsafe fn open_storage(
+        &self,
+        pwcs_name: *const WCHAR,
+        pstg_priority: *mut c_void,
+        grf_mode: DWORD,
+        snb_exclude: SNB,
+        reserved: DWORD,
+        ppstg: *mut *mut c_void,
+    ) -> HRESULT;
+    unsafe fn copy_to(
+        &self,
+        ciid_exclude: DWORD,
+        rgiid_exclude: *const IID,
+        snb_exclude: SNB,
+        pstg_dest: *mut c_void,
+    ) -> HRESULT;
+    unsafe fn move_element_to(
+        &self,
+        pwcs_name: *const WCHAR,
+        pstg_dest: *mut c_void,
+        pwcs_new_name: *const WCHAR,
+        grf_flags: DWORD,
+    ) -> HRESULT;
+    unsafe fn commit(&self, grf_commit_flags: DWORD) -> HRESULT;
+    unsafe fn revert(&self) -> HRESULT;
+    unsafe fn enum_elements(
+        &self,
+        reserved1: DWORD,
+        reserved2: *mut c_void,
+        reserved3: DWORD,
+        ppenum: *mut *mut c_void,
+    ) -> HRESULT;
+    unsafe fn destroy_element(&self, pwcs_name: *const WCHAR) -> HRESULT;
+    unsafe fn rename_element(
+        &self,
+        pwcs_old_name: *const WCHAR,
+        pwcs_new_name: *const WCHAR,
+    ) -> HRESULT;
+    unsafe fn set_element_times(
+        &self,
+        pwcs_name: *const WCHAR,
+        pctime: *const FILETIME,
+        patime: *const FILETIME,
+        pmtime: *const FILETIME,
+    ) -> HRESULT;
+    unsafe fn set_class(&self, clsid: REFCLSID) -> HRESULT;
+    unsafe fn set_state_bits(&self, grf_state_bits: DWORD, grf_mask: DWORD) -> HRESULT;
+    unsafe fn stat(&self, pstatstg: *mut STATSTG, grf_stat_flag: DWORD) -> HRESULT;
+}
+
+#[co_class(implements(IOleClientSite, IOleInPlaceSite, IStorage))]
 struct WebBrowser {
-    ole_object: InterfacePtr<dyn IOleObject>,
-    ole_in_place_object: InterfacePtr<dyn IOleInPlaceObject>,
+    //     ole_object: InterfacePtr<dyn IOleObject>,
+//     ole_in_place_object: InterfacePtr<dyn IOleInPlaceObject>,
+}
+
+impl WebBrowser {
+    fn new() -> Box<WebBrowser> {
+        WebBrowser::allocate()
+    }
+}
+
+impl IOleClientSite for WebBrowser {
+    unsafe fn save_object(&self) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn get_moniker(&self, _: u32, _: u32, _: *mut *mut std::ffi::c_void) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn get_container(&self, _: *mut *mut std::ffi::c_void) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn show_object(&self) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn on_show_window(&self, _: i32) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn request_new_object_layout(&self) -> i32 {
+        unimplemented!()
+    }
+}
+
+impl IOleWindow for WebBrowser {
+    unsafe fn get_window(&self, _: *mut *mut winapi::shared::windef::HWND__) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn context_sensitive_help(&self, _: i32) -> i32 {
+        unimplemented!()
+    }
+}
+
+impl IOleInPlaceSite for WebBrowser {
+    unsafe fn can_in_place_activate(&self) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn on_in_place_activate(&self) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn on_ui_activate(&self) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn get_window_context(
+        &self,
+        _: *mut *mut std::ffi::c_void,
+        _: *mut *mut std::ffi::c_void,
+        _: *mut winapi::shared::windef::RECT,
+        _: *mut winapi::shared::windef::RECT,
+        _: *mut std::ffi::c_void,
+    ) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn scroll(&self, _: winapi::shared::windef::SIZE) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn on_ui_deactivate(&self, _: i32) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn on_in_place_deactivate(&self) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn discard_undo_state(&self) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn deactivate_and_undo(&self) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn on_pos_rect_change(&self, _: *mut winapi::shared::windef::RECT) -> i32 {
+        unimplemented!()
+    }
+}
+
+impl IStorage for WebBrowser {
+    unsafe fn create_stream(
+        &self,
+        _: *const u16,
+        _: u32,
+        _: u32,
+        _: u32,
+        _: *mut *mut std::ffi::c_void,
+    ) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn open_stream(
+        &self,
+        _: *const u16,
+        _: *mut std::ffi::c_void,
+        _: u32,
+        _: u32,
+        _: *mut *mut std::ffi::c_void,
+    ) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn create_storage(
+        &self,
+        _: *const u16,
+        _: u32,
+        _: u32,
+        _: u32,
+        _: *mut *mut std::ffi::c_void,
+    ) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn open_storage(
+        &self,
+        _: *const u16,
+        _: *mut std::ffi::c_void,
+        _: u32,
+        _: *const *const u16,
+        _: u32,
+        _: *mut *mut std::ffi::c_void,
+    ) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn copy_to(
+        &self,
+        _: u32,
+        _: *const winapi::shared::guiddef::GUID,
+        _: *const *const u16,
+        _: *mut std::ffi::c_void,
+    ) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn move_element_to(
+        &self,
+        _: *const u16,
+        _: *mut std::ffi::c_void,
+        _: *const u16,
+        _: u32,
+    ) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn commit(&self, _: u32) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn revert(&self) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn enum_elements(
+        &self,
+        _: u32,
+        _: *mut std::ffi::c_void,
+        _: u32,
+        _: *mut *mut std::ffi::c_void,
+    ) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn destroy_element(&self, _: *const u16) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn rename_element(&self, _: *const u16, _: *const u16) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn set_element_times(
+        &self,
+        _: *const u16,
+        _: *const winapi::shared::minwindef::FILETIME,
+        _: *const winapi::shared::minwindef::FILETIME,
+        _: *const winapi::shared::minwindef::FILETIME,
+    ) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn set_class(&self, _: *const winapi::shared::guiddef::GUID) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn set_state_bits(&self, _: u32, _: u32) -> i32 {
+        unimplemented!()
+    }
+    unsafe fn stat(&self, _: *mut winapi::um::objidlbase::STATSTG, _: u32) -> i32 {
+        unimplemented!()
+    }
 }
 
 // #[com_interface(0000011b-0000-0000-C000-000000000046)]
