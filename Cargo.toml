@@ -1,13 +1,28 @@
 [package]
-name = "mshtml_webview"
-version = "0.1.0"
-authors = ["zxey <zxey@users.noreply.github.com>"]
-edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+name = 'mshtml_webview'
+version = '0.1.0'
+authors = ['Richard Hozák <r.hozak@seznam.cz>']
+edition = '2018'
 
 [dependencies]
-winapi = { version = "0.3", features = ["windef", "minwindef", "winuser", "ole2", "libloaderapi", "errhandlingapi", "ntdef", "basetsd", "winerror", "wingdi", "combaseapi", "shobjidl_core", "wtypesbase", "shobjidl"] }
-libc = "0.2"
-com = { git = "https://github.com/zxey/com-rs.git", branch = "fix-user-fields" }
-winreg = "0.6"
+libc = '0.2'
+
+[dependencies.winapi]
+version = '0.3'
+features = [
+    'impl-default',
+    'minwindef',
+    'ntdef',
+    'windef',
+    'winerror',
+    'errhandlingapi',
+    'libloaderapi',
+    'objidl',
+    'ole2',
+    'winuser',
+    'oaidl',
+]
+
+[dependencies.com]
+git = 'https://github.com/zxey/com-rs.git'
+branch = 'fix-user-fields'
