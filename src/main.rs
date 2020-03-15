@@ -13,9 +13,9 @@ use winapi::um::wingdi::LOGPALETTE;
 use winapi::um::winuser::*;
 // use winapi::um::objidlbase::IEnumUnknown;
 use com::{co_class, com_interface, interfaces::iunknown::IUnknown, ComPtr};
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::os::raw::{c_char, c_void};
-use std::os::windows::ffi::OsStrExt;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
 
 type LPFORMATETC = *mut FORMATETC;
@@ -122,7 +122,7 @@ pub trait IOleInPlaceSite: IOleWindow {
         pp_doc: *mut *mut c_void,
         lprc_pos_rect: LPRECT,
         lprc_clip_rect: LPRECT,
-        lp_frame_info: *mut c_void,
+        lp_frame_info: *mut OLEINPLACEFRAMEINFO,
     ) -> HRESULT;
     unsafe fn scroll(&self, scroll_extant: SIZE) -> HRESULT;
     unsafe fn on_ui_deactivate(&self, f_undoable: BOOL) -> HRESULT;
@@ -214,6 +214,12 @@ struct WebBrowser {
     rect_obj: RECT,
 }
 
+#[derive(Debug)]
+struct Userdata {
+    hwnd_addressbar: HWND,
+    h_instance: HINSTANCE,
+}
+
 //     ole_object: ComPtr<dyn IOleObject>,
 //     ole_in_place_object: ComPtr<dyn IOleInPlaceObject>,
 
@@ -246,6 +252,11 @@ impl WebBrowser {
                 }
             }
 
+            let userdata = Box::new(Userdata {
+                hwnd_addressbar: ptr::null_mut(),
+                h_instance,
+            });
+
             let title = to_wstring("mshtml_webview");
             let handle = CreateWindowExW(
                 0,
@@ -259,7 +270,7 @@ impl WebBrowser {
                 HWND_DESKTOP,
                 ptr::null_mut(),
                 h_instance,
-                ptr::null_mut(),
+                Box::into_raw(userdata) as _,
             );
 
             ShowWindow(handle, SW_SHOWDEFAULT);
@@ -291,7 +302,6 @@ impl IOleClientSite for WebBrowser {
         // dw_which_moniker: OLEWHICHMK_CONTAINER = 1
 
         if dw_assign == 1 || dw_which_moniker == 1 {
-            eprintln!("get moniker fail");
             E_FAIL
         } else {
             E_NOTIMPL
@@ -321,6 +331,25 @@ impl IOleWindow for WebBrowser {
     }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone)]
+#[allow(non_snake_case)]
+pub struct OLEINPLACEFRAMEINFO {
+    // OIFI
+    pub cb: UINT,
+    pub fMDIApp: BOOL,
+    pub hwndFrame: HWND,
+    pub haccel: HACCEL,
+    pub cAccelEntries: UINT,
+}
+
+impl Default for OLEINPLACEFRAMEINFO {
+    #[inline]
+    fn default() -> Self {
+        unsafe { std::mem::zeroed() }
+    }
+}
+
 impl IOleInPlaceSite for WebBrowser {
     unsafe fn can_in_place_activate(&self) -> i32 {
         S_OK
@@ -334,14 +363,25 @@ impl IOleInPlaceSite for WebBrowser {
     }
     unsafe fn get_window_context(
         &self,
-        _: *mut *mut std::ffi::c_void,
-        _: *mut *mut std::ffi::c_void,
-        _: *mut winapi::shared::windef::RECT,
-        _: *mut winapi::shared::windef::RECT,
-        _: *mut std::ffi::c_void,
+        pp_frame: *mut *mut std::ffi::c_void,
+        pp_doc: *mut *mut std::ffi::c_void,
+        lprc_pos_rect: *mut winapi::shared::windef::RECT,
+        lprc_clip_rect: *mut winapi::shared::windef::RECT,
+        lp_frame_info: *mut OLEINPLACEFRAMEINFO,
     ) -> i32 {
-        // implement
-        unimplemented!()
+        *pp_frame = ptr::null_mut();
+        *pp_doc = ptr::null_mut();
+        (*lprc_pos_rect).left = self.rect_obj.left;
+        (*lprc_pos_rect).top = self.rect_obj.top;
+        (*lprc_pos_rect).right = self.rect_obj.right;
+        (*lprc_pos_rect).bottom = self.rect_obj.bottom;
+        *lprc_clip_rect = *lprc_pos_rect;
+
+        (*lp_frame_info).fMDIApp = 0;
+        (*lp_frame_info).hwndFrame = self.hwnd_parent;
+        (*lp_frame_info).haccel = ptr::null_mut();
+        (*lp_frame_info).cAccelEntries = 0;
+        S_OK
     }
     unsafe fn scroll(&self, _: winapi::shared::windef::SIZE) -> i32 {
         E_NOTIMPL
@@ -488,10 +528,128 @@ fn main() {
     }
 }
 
-extern "system" fn wndproc(hwnd: HWND, message: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+const BTN_BACK: WORD = 1;
+const BTN_NEXT: WORD = 2;
+const BTN_REFRESH: WORD = 3;
+const BTN_GO: WORD = 4;
+
+unsafe extern "system" fn wndproc(
+    hwnd: HWND,
+    message: UINT,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match message {
         WM_CREATE => {
-            println!("created");
+            let userdata: *mut Userdata = lparam as _;
+            if userdata.is_null() {
+                eprintln!("userdata is null");
+                return DefWindowProcW(hwnd, message, wparam, lparam);
+            }
+            let userdata = userdata.as_mut().unwrap();
+
+            println!("wm create");
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("<<< Back").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                5,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_BACK as _,
+                userdata.h_instance,
+                ptr::null_mut(),
+            );
+
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("Next >>>").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                90,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_NEXT as _,
+                userdata.h_instance,
+                ptr::null_mut(),
+            );
+
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("Refresh").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                175,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_REFRESH as _,
+                userdata.h_instance,
+                ptr::null_mut(),
+            );
+
+            // let edit_handle = CreateWindowExW(
+            //     0,
+            //     to_wstring("EDIT").as_ptr(),
+            //     to_wstring("http://google.com/").as_ptr(),
+            //     WS_CHILD | WS_VISIBLE | WS_BORDER,
+            //     260,
+            //     10,
+            //     200,
+            //     20,
+            //     hwnd,
+            //     ptr::null_mut(),
+            //     userdata.h_instance,
+            //     lparam as _,
+            // );
+
+            // userdata.hwnd_addressbar = edit_handle;
+
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("Go").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                465,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_GO as _,
+                userdata.h_instance,
+                ptr::null_mut(),
+            );
+            1
+        }
+        WM_COMMAND => {
+            let cmd = LOWORD(wparam as _);
+            match cmd {
+                BTN_BACK => println!("go back"),
+                BTN_NEXT => println!("go forward"),
+                BTN_REFRESH => println!("refresh"),
+                BTN_GO => {
+                    println!("go");
+                    // let mut buf: [u16; 1024] = [0; 1024];
+                    // let userdata: *mut Userdata = lparam as _;
+                    // let len =
+                    //     GetWindowTextW((*userdata).hwnd_addressbar, buf.as_mut_ptr(), buf.len() as _)
+                    //         as usize;
+                    // if len == 0 {
+                    //     return 1;
+                    // }
+
+                    // let s = OsString::from_wide(&buf[..len + 1]);
+                    // println!("{:?}", s);
+                }
+                _ => {}
+            }
+
             1
         }
         WM_SIZE => {
@@ -499,12 +657,10 @@ extern "system" fn wndproc(hwnd: HWND, message: UINT, wparam: WPARAM, lparam: LP
             1
         }
         WM_DESTROY => {
-            unsafe {
-                ExitProcess(0);
-            }
+            ExitProcess(0);
             1
         }
-        _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+        _ => DefWindowProcW(hwnd, message, wparam, lparam),
     }
 }
 
@@ -513,4 +669,14 @@ fn to_wstring(s: &str) -> Vec<u16> {
         .encode_wide()
         .chain(Some(0).into_iter())
         .collect()
+}
+
+unsafe fn from_wstring(wide: *const u16) -> OsString {
+    assert!(!wide.is_null());
+    for i in 0.. {
+        if *wide.offset(i) == 0 {
+            return OsStringExt::from_wide(std::slice::from_raw_parts(wide, i as usize));
+        }
+    }
+    unreachable!()
 }
