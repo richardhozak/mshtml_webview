@@ -114,7 +114,7 @@ impl WebBrowser {
         }
     }
 
-    fn initialize(&mut self, _h_instance: HINSTANCE, h_wnd: HWND, rect: RECT) {
+    fn initialize(&mut self, h_wnd: HWND, rect: RECT) {
         unsafe {
             let iole_client_site = self
                 .get_interface::<dyn IOleClientSite>()
@@ -239,7 +239,7 @@ fn main() {
         );
 
         let mut wb = WebBrowser::new();
-        wb.initialize(h_instance, h_wnd, RECT {left: 0, right: 300, top: 0, bottom: 300});
+        wb.initialize(h_wnd, RECT {left: 0, right: 300, top: 45, bottom: 300});
         wb.navigate("http://google.com");
 
         ShowWindow(h_wnd, SW_SHOWDEFAULT);
@@ -265,91 +265,88 @@ unsafe extern "system" fn wndproc(
 ) -> LRESULT {
     match message {
         WM_CREATE => {
-            // let userdata: *mut Userdata = lparam as _;
-            // if userdata.is_null() {
-            //     eprintln!("userdata is null");
-            //     return DefWindowProcW(hwnd, message, wparam, lparam);
-            // }
-            // let userdata = userdata.as_mut().unwrap();
+            let h_instance = GetModuleHandleA(ptr::null_mut());
+            if h_instance.is_null() {
+                panic!("could not retrieve module handle");
+            }
 
-            // println!("wm create");
-            // CreateWindowExW(
+            println!("wm create");
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("<<< Back").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                5,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_BACK as _,
+                h_instance,
+                ptr::null_mut(),
+            );
+
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("Next >>>").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                90,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_NEXT as _,
+                h_instance,
+                ptr::null_mut(),
+            );
+
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("Refresh").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                175,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_REFRESH as _,
+                h_instance,
+                ptr::null_mut(),
+            );
+
+            // let edit_handle = CreateWindowExW(
             //     0,
-            //     to_wstring("BUTTON").as_ptr(),
-            //     to_wstring("<<< Back").as_ptr(),
-            //     WS_CHILD | WS_VISIBLE,
-            //     5,
-            //     5,
-            //     80,
-            //     30,
+            //     to_wstring("EDIT").as_ptr(),
+            //     to_wstring("http://google.com/").as_ptr(),
+            //     WS_CHILD | WS_VISIBLE | WS_BORDER,
+            //     260,
+            //     10,
+            //     200,
+            //     20,
             //     hwnd,
-            //     BTN_BACK as _,
-            //     userdata.h_instance,
             //     ptr::null_mut(),
+            //     h_instance,
+            //     lparam as _,
             // );
 
-            // CreateWindowExW(
-            //     0,
-            //     to_wstring("BUTTON").as_ptr(),
-            //     to_wstring("Next >>>").as_ptr(),
-            //     WS_CHILD | WS_VISIBLE,
-            //     90,
-            //     5,
-            //     80,
-            //     30,
-            //     hwnd,
-            //     BTN_NEXT as _,
-            //     userdata.h_instance,
-            //     ptr::null_mut(),
-            // );
+            // userdata.hwnd_addressbar = edit_handle;
 
-            // CreateWindowExW(
-            //     0,
-            //     to_wstring("BUTTON").as_ptr(),
-            //     to_wstring("Refresh").as_ptr(),
-            //     WS_CHILD | WS_VISIBLE,
-            //     175,
-            //     5,
-            //     80,
-            //     30,
-            //     hwnd,
-            //     BTN_REFRESH as _,
-            //     userdata.h_instance,
-            //     ptr::null_mut(),
-            // );
-
-            // // let edit_handle = CreateWindowExW(
-            // //     0,
-            // //     to_wstring("EDIT").as_ptr(),
-            // //     to_wstring("http://google.com/").as_ptr(),
-            // //     WS_CHILD | WS_VISIBLE | WS_BORDER,
-            // //     260,
-            // //     10,
-            // //     200,
-            // //     20,
-            // //     hwnd,
-            // //     ptr::null_mut(),
-            // //     userdata.h_instance,
-            // //     lparam as _,
-            // // );
-
-            // // userdata.hwnd_addressbar = edit_handle;
-
-            // CreateWindowExW(
-            //     0,
-            //     to_wstring("BUTTON").as_ptr(),
-            //     to_wstring("Go").as_ptr(),
-            //     WS_CHILD | WS_VISIBLE,
-            //     465,
-            //     5,
-            //     80,
-            //     30,
-            //     hwnd,
-            //     BTN_GO as _,
-            //     userdata.h_instance,
-            //     ptr::null_mut(),
-            // );
-            // 1
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("Go").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                465,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_GO as _,
+                h_instance,
+                ptr::null_mut(),
+            );
 
             1
         }

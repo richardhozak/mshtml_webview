@@ -45,11 +45,11 @@ impl IOleClientSite for WebBrowser {
 impl IOleWindow for WebBrowser {
     unsafe fn get_window(&self, phwnd: *mut *mut winapi::shared::windef::HWND__) -> i32 {
         if self.inner.is_none() {
+            *phwnd = ptr::null_mut();
             return E_PENDING;
         }
 
         *phwnd = self.inner.as_ref().unwrap().hwnd_parent;
-
         S_OK
     }
     unsafe fn context_sensitive_help(&self, _: i32) -> i32 {
