@@ -2,7 +2,7 @@ use winapi::shared::guiddef::*;
 use winapi::shared::minwindef::*;
 use winapi::shared::ntdef::*;
 use winapi::shared::windef::*;
-use winapi::shared::winerror::{self, E_FAIL, E_NOINTERFACE, E_NOTIMPL, NOERROR, S_OK};
+use winapi::shared::winerror::{self, E_FAIL, E_NOINTERFACE, E_NOTIMPL, S_OK};
 use winapi::shared::wtypesbase::*;
 use winapi::um::errhandlingapi::*;
 use winapi::um::libloaderapi::*;
@@ -12,7 +12,7 @@ use winapi::um::ole2::*;
 use winapi::um::wingdi::LOGPALETTE;
 use winapi::um::winuser::*;
 // use winapi::um::objidlbase::IEnumUnknown;
-use com::{co_class, com_interface, interfaces::iunknown::IUnknown, InterfacePtr};
+use com::{co_class, com_interface, interfaces::iunknown::IUnknown, ComPtr};
 use std::ffi::OsStr;
 use std::os::raw::{c_char, c_void};
 use std::os::windows::ffi::OsStrExt;
@@ -38,7 +38,7 @@ extern "system" {
     fn OleUninitialize();
 }
 
-#[com_interface(00000118-0000-0000-C000-000000000046)]
+#[com_interface("00000118-0000-0000-C000-000000000046")]
 pub trait IOleClientSite: IUnknown {
     unsafe fn save_object(&self) -> HRESULT;
     unsafe fn get_moniker(
@@ -53,7 +53,7 @@ pub trait IOleClientSite: IUnknown {
     unsafe fn request_new_object_layout(&self) -> HRESULT;
 }
 
-#[com_interface(00000112-0000-0000-C000-000000000046)]
+#[com_interface("00000112-0000-0000-C000-000000000046")]
 pub trait IOleObject: IUnknown {
     unsafe fn set_client_site(&self, p_client_site: *mut c_void) -> HRESULT;
     unsafe fn get_client_site(&self, p_client_site: *mut *mut c_void) -> HRESULT;
@@ -97,13 +97,13 @@ pub trait IOleObject: IUnknown {
     unsafe fn set_color_scheme(&self, p_logpal: *mut LOGPALETTE) -> HRESULT;
 }
 
-#[com_interface(00000114-0000-0000-C000-000000000046)]
+#[com_interface("00000114-0000-0000-C000-000000000046")]
 pub trait IOleWindow: IUnknown {
     unsafe fn get_window(&self, phwnd: *mut HWND) -> HRESULT;
     unsafe fn context_sensitive_help(&self, f_enter_mode: BOOL) -> HRESULT;
 }
 
-#[com_interface(00000113-0000-0000-C000-000000000046)]
+#[com_interface("00000113-0000-0000-C000-000000000046")]
 pub trait IOleInPlaceObject: IOleWindow {
     unsafe fn in_place_deactivate(&self) -> HRESULT;
     unsafe fn ui_deactivate(&self) -> HRESULT;
@@ -111,7 +111,7 @@ pub trait IOleInPlaceObject: IOleWindow {
     unsafe fn reactivate_and_undo(&self) -> HRESULT;
 }
 
-#[com_interface(00000119-0000-0000-C000-000000000046)]
+#[com_interface("00000119-0000-0000-C000-000000000046")]
 pub trait IOleInPlaceSite: IOleWindow {
     unsafe fn can_in_place_activate(&self) -> HRESULT;
     unsafe fn on_in_place_activate(&self) -> HRESULT;
@@ -132,7 +132,7 @@ pub trait IOleInPlaceSite: IOleWindow {
     unsafe fn on_pos_rect_change(&self, lprc_post_rect: LPRECT) -> HRESULT;
 }
 
-#[com_interface(0000000b-0000-0000-C000-000000000046)]
+#[com_interface("0000000b-0000-0000-C000-000000000046")]
 pub trait IStorage: IUnknown {
     unsafe fn create_stream(
         &self,
@@ -214,8 +214,8 @@ struct WebBrowser {
     rect_obj: RECT,
 }
 
-//     ole_object: InterfacePtr<dyn IOleObject>,
-//     ole_in_place_object: InterfacePtr<dyn IOleInPlaceObject>,
+//     ole_object: ComPtr<dyn IOleObject>,
+//     ole_in_place_object: ComPtr<dyn IOleInPlaceObject>,
 
 impl WebBrowser {
     fn new() -> Box<WebBrowser> {

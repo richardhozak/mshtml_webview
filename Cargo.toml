@@ -9,5 +9,5 @@ edition = "2018"
 [dependencies]
 winapi = { version = "0.3", features = ["windef", "minwindef", "winuser", "ole2", "libloaderapi", "errhandlingapi", "ntdef", "basetsd", "winerror", "wingdi", "combaseapi", "shobjidl_core", "wtypesbase", "shobjidl"] }
 libc = "0.2"
-com = "0.1"
+com = { git = "https://github.com/zxey/com-rs.git", branch = "fix-user-fields" }
 winreg = "0.6"

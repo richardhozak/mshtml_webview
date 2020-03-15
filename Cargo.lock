@@ -3,18 +3,15 @@
 [[package]]
 name = "com"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91ab5f491f2e644497f3013dbe7d5beca34387de5aa918f0eb044cb9b9ad5c3b"
+source = "git+https://github.com/zxey/com-rs.git?branch=fix-user-fields#767e5d00949fbef49c1be27265bb1dd484f5467a"
 dependencies = [
  "com_macros",
- "winapi",
 ]
 
 [[package]]
 name = "com_macros"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f3d47eb3e80bbee654a9e8c56553e01b6933f3ad186e59f7b5bbf1576e84acc"
+source = "git+https://github.com/zxey/com-rs.git?branch=fix-user-fields#767e5d00949fbef49c1be27265bb1dd484f5467a"
 dependencies = [
  "com_macros_support",
  "proc-macro2",
@@ -24,8 +21,7 @@ dependencies = [
 [[package]]
 name = "com_macros_support"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "deed01e0bbc5d2c08ae7c82e493d38a77d58b2c72da02828dd2edd0c7bdb208a"
+source = "git+https://github.com/zxey/com-rs.git?branch=fix-user-fields#767e5d00949fbef49c1be27265bb1dd484f5467a"
 dependencies = [
  "proc-macro2",
  "quote",
