@@ -87,18 +87,19 @@ impl WebBrowser {
         WebBrowser::allocate(None)
     }
 
-    fn set_rect(&self) {
-        // let mut rect: RECT = Default::default();
-        // unsafe {
-        //     GetClientRect(self.hwnd_parent, &mut rect);
-        // }
-        // rect.top = 45;
-        // unsafe {
-        //     self.ole_in_place_object
-        //         .as_ref()
-        //         .unwrap()
-        //         .set_object_rects(&rect, &rect);
-        // }
+    fn set_rect(&self, mut rect: RECT) {
+        if self.inner.is_none() {
+            return;
+        }
+
+        rect.top = 45;
+        unsafe {
+            self.inner
+                .as_ref()
+                .unwrap()
+                .ole_in_place_object
+                .set_object_rects(&rect, &rect);
+        }
     }
 
     fn navigate(&self, url: &str) {
@@ -196,10 +197,11 @@ fn main() {
             panic!("could not initialize ole");
         }
 
-        let h_instance = GetModuleHandleA(ptr::null_mut());
+        let h_instance = GetModuleHandleW(ptr::null_mut());
         if h_instance.is_null() {
             panic!("could not retrieve module handle");
         }
+
         let class_name = to_wstring("webview");
         let class = WNDCLASSW {
             style: 0,
@@ -242,6 +244,9 @@ fn main() {
         wb.initialize(h_wnd, RECT {left: 0, right: 300, top: 45, bottom: 300});
         wb.navigate("http://google.com");
 
+        let wb_ptr = Box::into_raw(wb);
+
+        SetWindowLongPtrW(h_wnd, GWLP_USERDATA, std::mem::transmute(wb_ptr));
         ShowWindow(h_wnd, SW_SHOWDEFAULT);
 
         let mut message: MSG = Default::default();
@@ -249,6 +254,8 @@ fn main() {
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
+
+        let _ = Box::from_raw(wb_ptr);
     }
 }
 
@@ -265,7 +272,7 @@ unsafe extern "system" fn wndproc(
 ) -> LRESULT {
     match message {
         WM_CREATE => {
-            let h_instance = GetModuleHandleA(ptr::null_mut());
+            let h_instance = GetModuleHandleW(ptr::null_mut());
             if h_instance.is_null() {
                 panic!("could not retrieve module handle");
             }
@@ -376,7 +383,14 @@ unsafe extern "system" fn wndproc(
             1
         }
         WM_SIZE => {
-            println!("size");
+            let wb_ptr: *mut WebBrowser = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+            if wb_ptr.is_null() {
+                return 1;
+            }
+            let mut rect: RECT = Default::default();
+            GetClientRect(hwnd, &mut rect);
+            (*wb_ptr).set_rect(rect);
+
             1
         }
         WM_DESTROY => {
