@@ -10,7 +10,7 @@ use winapi::um::winuser::*;
 // use winapi::um::objidlbase::IEnumUnknown;
 use com::{co_class, interfaces::iunknown::IUnknown, ComPtr};
 use libc::c_void;
-use std::cell::Cell;
+use std::cell::RefCell;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
@@ -57,12 +57,11 @@ struct WebBrowser {
     hwnd_parent: HWND,
     rect_obj: RECT,
     ole_object: Option<ComPtr<dyn IOleObject>>,
-    ole_in_place_object: Cell<Option<ComPtr<dyn IOleInPlaceObject>>>,
+    ole_in_place_object: RefCell<Option<ComPtr<dyn IOleInPlaceObject>>>,
+    web_browser2: Option<ComPtr<dyn IWebBrowser2>>,
 }
 
-#[derive(Debug)]
 struct Userdata {
-    hwnd_addressbar: HWND,
     h_instance: HINSTANCE,
 }
 
@@ -113,9 +112,9 @@ impl WebBrowser {
             }
 
             let userdata = Box::new(Userdata {
-                hwnd_addressbar: ptr::null_mut(),
                 h_instance,
             });
+            let userdata = Box::into_raw(userdata);
 
             let title = to_wstring("mshtml_webview");
             let handle = CreateWindowExW(
@@ -130,7 +129,7 @@ impl WebBrowser {
                 HWND_DESKTOP,
                 ptr::null_mut(),
                 h_instance,
-                Box::into_raw(userdata) as _,
+                userdata as _, // TODO we need to call Box::into_raw when quiting so we do not leak
             );
 
             let mut web_browser = WebBrowser::allocate(
@@ -142,7 +141,8 @@ impl WebBrowser {
                     bottom: 300,
                 },
                 None,
-                Cell::new(None),
+                RefCell::new(None),
+                None,
             );
 
             let iole_client_site = web_browser
@@ -168,7 +168,7 @@ impl WebBrowser {
                 panic!("cannot create WebBrowser ole object");
             }
 
-            let mut ioleobject = ComPtr::<dyn IOleObject>::new(ioleobject_ptr as *mut *mut _);
+            let ioleobject = ComPtr::<dyn IOleObject>::new(ioleobject_ptr as *mut *mut _);
 
             // let hresult = ioleobject.set_client_site(iole_client_site.as_raw() as *mut c_void);
 
@@ -184,7 +184,6 @@ impl WebBrowser {
 
             web_browser.ole_object = Some(ioleobject.clone());
 
-            // this crashes
             let hresult = ioleobject.do_verb(
                 -5,
                 ptr::null_mut(),
@@ -197,6 +196,12 @@ impl WebBrowser {
             if FAILED(hresult) {
                 panic!("ioleobject.do_verb() failed");
             }
+
+            let web_browser2 = ioleobject
+                .get_interface::<dyn IWebBrowser2>()
+                .expect("get interface IWebBrowser2 failed");
+
+            web_browser.web_browser2 = Some(web_browser2);
 
             // println!("yeet");
             // let hresult = ioleobject.set_client_site(iole_client_site);
@@ -214,6 +219,21 @@ impl WebBrowser {
             ShowWindow(handle, SW_SHOWDEFAULT);
 
             web_browser
+        }
+    }
+
+    fn set_rect(&self) {
+        let mut rect: RECT = Default::default();
+        unsafe {
+            GetClientRect(self.hwnd_parent, &mut rect);
+        }
+        rect.top = 45;
+        unsafe {
+            self.ole_in_place_object
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .set_object_rects(&rect, &rect);
         }
     }
 }

@@ -1,9 +1,10 @@
-use super::WebBrowser;
 use super::interface::*;
 use super::OleLockRunning;
+use super::WebBrowser;
 
+use com::{interfaces::IUnknown, ComPtr};
 use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, FAILED, S_OK};
-use com::{ComPtr, interfaces::IUnknown};
+use winapi::shared::windef::HWND;
 
 use std::ptr;
 
@@ -64,22 +65,17 @@ impl IOleInPlaceSite for WebBrowser {
             .expect("webbrowser incorrectly initialized, ole_object is not present");
 
         OleLockRunning(ole_object.as_raw() as _, 1, 0);
-        let mut ole_in_place_object = ptr::null_mut();
-        let result = ole_object.query_interface(
-            &<dyn IOleInPlaceObject as com::ComInterface>::IID,
-            &mut ole_in_place_object,
-        );
 
-        if FAILED(result) {
-            panic!("cannot query ole_in_place_object");
-        }
-
-        let ole_in_place_object =
-            ComPtr::<dyn IOleInPlaceObject>::new(std::mem::transmute(ole_in_place_object));
+        let ole_in_place_object = ole_object
+            .get_interface::<dyn IOleInPlaceObject>()
+            .expect("cannot query ole_in_place_object");
 
         ole_in_place_object.set_object_rects(&self.rect_obj, &self.rect_obj);
+        let mut hwnd_control: HWND = ptr::null_mut();
+        ole_in_place_object.get_window(&mut hwnd_control);
+        assert!(!hwnd_control.is_null(), "in place object hwnd is null");
 
-        self.ole_in_place_object.set(Some(ole_in_place_object));
+        *self.ole_in_place_object.borrow_mut() = Some(ole_in_place_object);
 
         S_OK
     }
