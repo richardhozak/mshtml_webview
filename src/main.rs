@@ -2,7 +2,7 @@ use winapi::shared::guiddef::*;
 use winapi::shared::minwindef::*;
 use winapi::shared::ntdef::*;
 use winapi::shared::windef::*;
-use winapi::shared::winerror::{self, NOERROR};
+use winapi::shared::winerror::{self, E_FAIL, E_NOINTERFACE, E_NOTIMPL, NOERROR, S_OK};
 use winapi::shared::wtypesbase::*;
 use winapi::um::errhandlingapi::*;
 use winapi::um::libloaderapi::*;
@@ -210,55 +210,127 @@ pub trait IStorage: IUnknown {
 
 #[co_class(implements(IOleClientSite, IOleInPlaceSite, IStorage))]
 struct WebBrowser {
-    //     ole_object: InterfacePtr<dyn IOleObject>,
-//     ole_in_place_object: InterfacePtr<dyn IOleInPlaceObject>,
+    hwnd_parent: HWND,
+    rect_obj: RECT,
 }
+
+//     ole_object: InterfacePtr<dyn IOleObject>,
+//     ole_in_place_object: InterfacePtr<dyn IOleInPlaceObject>,
 
 impl WebBrowser {
     fn new() -> Box<WebBrowser> {
-        WebBrowser::allocate()
+        unsafe {
+            let h_instance = GetModuleHandleA(ptr::null_mut());
+            if h_instance.is_null() {
+                panic!("could not retrieve module handle");
+            }
+            let class_name = to_wstring("webview");
+            let class = WNDCLASSW {
+                style: 0,
+                lpfnWndProc: Some(wndproc),
+                cbClsExtra: 0,
+                cbWndExtra: 0,
+                hInstance: h_instance,
+                hIcon: ptr::null_mut(),
+                hCursor: LoadCursorW(ptr::null_mut(), IDC_ARROW),
+                hbrBackground: ptr::null_mut(),
+                lpszMenuName: ptr::null(),
+                lpszClassName: class_name.as_ptr(),
+            };
+
+            if RegisterClassW(&class) == 0 {
+                // ignore the "Class already exists" error for multiple windows
+                if GetLastError() as u32 != 1410 {
+                    OleUninitialize();
+                    panic!("could not register window class {}", GetLastError() as u32);
+                }
+            }
+
+            let title = to_wstring("mshtml_webview");
+            let handle = CreateWindowExW(
+                0,
+                class_name.as_ptr(),
+                title.as_ptr(),
+                WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                HWND_DESKTOP,
+                ptr::null_mut(),
+                h_instance,
+                ptr::null_mut(),
+            );
+
+            ShowWindow(handle, SW_SHOWDEFAULT);
+
+            WebBrowser::allocate(
+                handle,
+                RECT {
+                    left: 0,
+                    top: 0,
+                    right: 300,
+                    bottom: 300,
+                },
+            )
+        }
     }
 }
 
 impl IOleClientSite for WebBrowser {
     unsafe fn save_object(&self) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
-    unsafe fn get_moniker(&self, _: u32, _: u32, _: *mut *mut std::ffi::c_void) -> i32 {
-        unimplemented!()
+    unsafe fn get_moniker(
+        &self,
+        dw_assign: u32,
+        dw_which_moniker: u32,
+        _: *mut *mut std::ffi::c_void,
+    ) -> i32 {
+        // dw_assign: OLEGETMONIKER_ONLYIFTHERE = 1
+        // dw_which_moniker: OLEWHICHMK_CONTAINER = 1
+
+        if dw_assign == 1 || dw_which_moniker == 1 {
+            eprintln!("get moniker fail");
+            E_FAIL
+        } else {
+            E_NOTIMPL
+        }
     }
     unsafe fn get_container(&self, _: *mut *mut std::ffi::c_void) -> i32 {
-        unimplemented!()
+        E_NOINTERFACE
     }
     unsafe fn show_object(&self) -> i32 {
-        unimplemented!()
+        S_OK
     }
     unsafe fn on_show_window(&self, _: i32) -> i32 {
-        unimplemented!()
+        S_OK
     }
     unsafe fn request_new_object_layout(&self) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
 }
 
 impl IOleWindow for WebBrowser {
-    unsafe fn get_window(&self, _: *mut *mut winapi::shared::windef::HWND__) -> i32 {
-        unimplemented!()
+    unsafe fn get_window(&self, phwnd: *mut *mut winapi::shared::windef::HWND__) -> i32 {
+        *phwnd = self.hwnd_parent;
+        S_OK
     }
     unsafe fn context_sensitive_help(&self, _: i32) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
 }
 
 impl IOleInPlaceSite for WebBrowser {
     unsafe fn can_in_place_activate(&self) -> i32 {
-        unimplemented!()
+        S_OK
     }
     unsafe fn on_in_place_activate(&self) -> i32 {
+        // implement oleinplaceobject query interface
         unimplemented!()
     }
     unsafe fn on_ui_activate(&self) -> i32 {
-        unimplemented!()
+        S_OK
     }
     unsafe fn get_window_context(
         &self,
@@ -268,25 +340,27 @@ impl IOleInPlaceSite for WebBrowser {
         _: *mut winapi::shared::windef::RECT,
         _: *mut std::ffi::c_void,
     ) -> i32 {
+        // implement
         unimplemented!()
     }
     unsafe fn scroll(&self, _: winapi::shared::windef::SIZE) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn on_ui_deactivate(&self, _: i32) -> i32 {
-        unimplemented!()
+        S_OK
     }
     unsafe fn on_in_place_deactivate(&self) -> i32 {
-        unimplemented!()
+        // implement null fields
+        S_OK
     }
     unsafe fn discard_undo_state(&self) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn deactivate_and_undo(&self) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn on_pos_rect_change(&self, _: *mut winapi::shared::windef::RECT) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
 }
 
@@ -299,7 +373,7 @@ impl IStorage for WebBrowser {
         _: u32,
         _: *mut *mut std::ffi::c_void,
     ) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn open_stream(
         &self,
@@ -309,7 +383,7 @@ impl IStorage for WebBrowser {
         _: u32,
         _: *mut *mut std::ffi::c_void,
     ) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn create_storage(
         &self,
@@ -319,7 +393,7 @@ impl IStorage for WebBrowser {
         _: u32,
         _: *mut *mut std::ffi::c_void,
     ) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn open_storage(
         &self,
@@ -330,7 +404,7 @@ impl IStorage for WebBrowser {
         _: u32,
         _: *mut *mut std::ffi::c_void,
     ) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn copy_to(
         &self,
@@ -339,7 +413,7 @@ impl IStorage for WebBrowser {
         _: *const *const u16,
         _: *mut std::ffi::c_void,
     ) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn move_element_to(
         &self,
@@ -348,13 +422,13 @@ impl IStorage for WebBrowser {
         _: *const u16,
         _: u32,
     ) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn commit(&self, _: u32) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn revert(&self) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn enum_elements(
         &self,
@@ -363,13 +437,13 @@ impl IStorage for WebBrowser {
         _: u32,
         _: *mut *mut std::ffi::c_void,
     ) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn destroy_element(&self, _: *const u16) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn rename_element(&self, _: *const u16, _: *const u16) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn set_element_times(
         &self,
@@ -378,16 +452,16 @@ impl IStorage for WebBrowser {
         _: *const winapi::shared::minwindef::FILETIME,
         _: *const winapi::shared::minwindef::FILETIME,
     ) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn set_class(&self, _: *const winapi::shared::guiddef::GUID) -> i32 {
-        unimplemented!()
+        S_OK
     }
     unsafe fn set_state_bits(&self, _: u32, _: u32) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
     unsafe fn stat(&self, _: *mut winapi::um::objidlbase::STATSTG, _: u32) -> i32 {
-        unimplemented!()
+        E_NOTIMPL
     }
 }
 
@@ -400,54 +474,11 @@ impl IStorage for WebBrowser {
 fn main() {
     unsafe {
         let result = OleInitialize(ptr::null_mut());
-        if result != winerror::S_OK && result != winerror::S_FALSE {
+        if result != S_OK && result != winerror::S_FALSE {
             panic!("could not initialize ole");
         }
 
-        let h_instance = GetModuleHandleA(ptr::null_mut());
-        if h_instance.is_null() {
-            panic!("could not retrieve module handle");
-        }
-
-        let class_name = to_wstring("webview");
-        let class = WNDCLASSW {
-            style: 0,
-            lpfnWndProc: Some(wndproc),
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            hInstance: h_instance,
-            hIcon: ptr::null_mut(),
-            hCursor: LoadCursorW(ptr::null_mut(), IDC_ARROW),
-            hbrBackground: ptr::null_mut(),
-            lpszMenuName: ptr::null(),
-            lpszClassName: class_name.as_ptr(),
-        };
-
-        if RegisterClassW(&class) == 0 {
-            // ignore the "Class already exists" error for multiple windows
-            if GetLastError() as u32 != 1410 {
-                OleUninitialize();
-                panic!("could not register window class {}", GetLastError() as u32);
-            }
-        }
-
-        let title = to_wstring("mshtml_webview");
-        let handle = CreateWindowExW(
-            0,
-            class_name.as_ptr(),
-            title.as_ptr(),
-            WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            HWND_DESKTOP,
-            ptr::null_mut(),
-            h_instance,
-            ptr::null_mut(),
-        );
-
-        ShowWindow(handle, SW_SHOWDEFAULT);
+        let _ = WebBrowser::new();
 
         let mut message: MSG = Default::default();
         while GetMessageW(&mut message, ptr::null_mut(), 0, 0) > 0 {
