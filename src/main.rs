@@ -13,6 +13,7 @@ use winapi::um::wingdi::LOGPALETTE;
 use winapi::um::winuser::*;
 // use winapi::um::objidlbase::IEnumUnknown;
 use com::{co_class, com_interface, interfaces::iunknown::IUnknown, ComPtr};
+use std::cell::Cell;
 use std::ffi::{OsStr, OsString};
 use std::os::raw::{c_char, c_void};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
@@ -29,7 +30,10 @@ extern "stdcall" {
         p_client_size: *mut c_void,
         p_str: *mut c_void,
         ppv_obj: *mut *mut c_void,
-    );
+    ) -> HRESULT;
+
+    fn OleSetContainedObject(p_unknown: *mut c_void, f_contained: BOOL) -> HRESULT;
+    fn OleLockRunning(p_unknown: *mut c_void, f_lock: BOOL, f_last_unlock_closes: BOOL) -> HRESULT;
 
     fn ExitProcess(exit_code: UINT);
 }
@@ -81,7 +85,15 @@ pub trait IOleObject: IUnknown {
         dw_reserved: DWORD,
         pp_data_object: *mut *mut c_void,
     ) -> HRESULT;
-    unsafe fn do_verb(&self, i_verb: LONG, lpmsg: LPMSG, p_active_site: *mut c_void) -> HRESULT;
+    unsafe fn do_verb(
+        &self,
+        i_verb: LONG,
+        lpmsg: LPMSG,
+        p_active_site: *mut c_void,
+        lindex: LONG,
+        hwnd_parent: HWND,
+        lprc_pos_rect: LPCRECT,
+    ) -> HRESULT;
     unsafe fn enum_verbs(&self, pp_enum_ole_verb: *mut *mut c_void) -> HRESULT;
     unsafe fn update(&self) -> HRESULT;
     unsafe fn is_up_to_date(&self) -> HRESULT;
@@ -212,6 +224,8 @@ pub trait IStorage: IUnknown {
 struct WebBrowser {
     hwnd_parent: HWND,
     rect_obj: RECT,
+    ole_object: Option<ComPtr<dyn IOleObject>>,
+    ole_in_place_object: Cell<Option<ComPtr<dyn IOleInPlaceObject>>>,
 }
 
 #[derive(Debug)]
@@ -219,9 +233,6 @@ struct Userdata {
     hwnd_addressbar: HWND,
     h_instance: HINSTANCE,
 }
-
-//     ole_object: ComPtr<dyn IOleObject>,
-//     ole_in_place_object: ComPtr<dyn IOleInPlaceObject>,
 
 impl WebBrowser {
     fn new() -> Box<WebBrowser> {
@@ -273,9 +284,7 @@ impl WebBrowser {
                 Box::into_raw(userdata) as _,
             );
 
-            ShowWindow(handle, SW_SHOWDEFAULT);
-
-            let web_browser = WebBrowser::allocate(
+            let mut web_browser = WebBrowser::allocate(
                 handle,
                 RECT {
                     left: 0,
@@ -283,6 +292,8 @@ impl WebBrowser {
                     right: 300,
                     bottom: 300,
                 },
+                None,
+                Cell::new(None),
             );
 
             let mut iole_client_site = ptr::null_mut();
@@ -296,25 +307,67 @@ impl WebBrowser {
             }
 
             let mut istorage = ptr::null_mut();
-            let query_result = web_browser.query_interface(
-                &<dyn IStorage as com::ComInterface>::IID,
-                &mut istorage,
-            );
+            let query_result = web_browser
+                .query_interface(&<dyn IStorage as com::ComInterface>::IID, &mut istorage);
 
             if FAILED(query_result) {
                 panic!("istorage query failed");
             }
 
             let mut ioleobject = ptr::null_mut();
-            OleCreate(
-                &<dyn IWebBrowser2 as com::ComInterface>::IID as *const _,
-                &<dyn IOleObject as com::ComInterface>::IID as *const _,
+            let hresult = OleCreate(
+                &CLSID_WebBrowser,
+                &<dyn IOleObject as com::ComInterface>::IID,
                 1,
                 ptr::null_mut(),
                 iole_client_site,
                 istorage,
                 &mut ioleobject,
             );
+
+            if FAILED(hresult) {
+                panic!("cannot create WebBrowser ole object");
+            }
+
+            let ioleobject = ComPtr::<dyn IOleObject>::new(std::mem::transmute(&mut ioleobject));
+
+            let hresult = OleSetContainedObject(*ioleobject.as_raw() as _, 1);
+
+            if FAILED(hresult) {
+                panic!("OleSetContainedObject() failed");
+            }
+
+            // this crashes
+            ioleobject.do_verb(
+                -5,
+                ptr::null_mut(),
+                iole_client_site,
+                -1,
+                handle,
+                &web_browser.rect_obj,
+            );
+
+            if FAILED(hresult) {
+                panic!("OleSetContainedObject() failed");
+            }
+
+            println!("yyeeeettt");
+            web_browser.ole_object = Some(ioleobject);
+
+            ShowWindow(handle, SW_SHOWDEFAULT);
+
+            // println!("yeet");
+            // let hresult = ioleobject.set_client_site(iole_client_site);
+
+            // if FAILED(hresult) {
+            //     panic!("ioleobject.set_client_site() failed");
+            // }
+
+            //let iweb_browser = ioleobject.get_interface::<dyn IWebBrowser2>();
+            // let mut iweb_browser = ptr::null_mut();
+            // ioleobject.query_interface(&<dyn IWebBrowser2 as com::ComInterface>::IID, &mut iweb_browser);
+
+            // eprintln!("{}", iweb_browser.is_null());
 
             web_browser
         }
@@ -335,6 +388,7 @@ impl IOleClientSite for WebBrowser {
         // dw_which_moniker: OLEWHICHMK_CONTAINER = 1
 
         if dw_assign == 1 || dw_which_moniker == 1 {
+            eprintln!("assign faield");
             E_FAIL
         } else {
             E_NOTIMPL
@@ -364,6 +418,14 @@ impl IOleWindow for WebBrowser {
     }
 }
 
+// "8856F961-340A-11D0-A96B-00C04FD705A2"
+const CLSID_WebBrowser: com::sys::IID = com::sys::IID {
+    data1: 0x8856F961,
+    data2: 0x340A,
+    data3: 0x11D0,
+    data4: [0xA9, 0x6B, 0x00, 0xC0, 0x4F, 0xD7, 0x05, 0xA2],
+};
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 #[allow(non_snake_case)]
@@ -388,6 +450,31 @@ impl IOleInPlaceSite for WebBrowser {
         S_OK
     }
     unsafe fn on_in_place_activate(&self) -> i32 {
+        eprintln!("on_in_place_activate");
+
+        let ole_object = self
+            .ole_object
+            .as_ref()
+            .expect("webbrowser incorrectly initialized, ole_object is not present");
+
+        OleLockRunning(ole_object.as_raw() as _, 1, 0);
+        let mut ole_in_place_object = ptr::null_mut();
+        let result = ole_object.query_interface(
+            &<dyn IOleInPlaceObject as com::ComInterface>::IID,
+            &mut ole_in_place_object,
+        );
+
+        if FAILED(result) {
+            panic!("cannot query ole_in_place_object");
+        }
+
+        let ole_in_place_object =
+            ComPtr::<dyn IOleInPlaceObject>::new(std::mem::transmute(ole_in_place_object));
+
+        ole_in_place_object.set_object_rects(&self.rect_obj, &self.rect_obj);
+
+        self.ole_in_place_object.set(Some(ole_in_place_object));
+
         // implement oleinplaceobject query interface
         unimplemented!()
     }
@@ -402,6 +489,7 @@ impl IOleInPlaceSite for WebBrowser {
         lprc_clip_rect: *mut winapi::shared::windef::RECT,
         lp_frame_info: *mut OLEINPLACEFRAMEINFO,
     ) -> i32 {
+        eprintln!("get window context");
         *pp_frame = ptr::null_mut();
         *pp_doc = ptr::null_mut();
         (*lprc_pos_rect).left = self.rect_obj.left;
@@ -714,5 +802,8 @@ unsafe fn from_wstring(wide: *const u16) -> OsString {
     unreachable!()
 }
 
-#[com_interface("8856F961-340A-11D0-A96B-00C04FD705A2")]
+// #[com_interface("8856F961-340A-11D0-A96B-00C04FD705A2")] // CLSID
+// pub trait WebBrowserCLS : IUnknown {}
+
+#[com_interface("D30C1661-CDAF-11d0-8A3E-00C04FC9E26E")]
 pub trait IWebBrowser2: IUnknown {}
