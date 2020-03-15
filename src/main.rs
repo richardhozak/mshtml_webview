@@ -11,8 +11,8 @@ use winapi::um::winuser::*;
 use com::{co_class, interfaces::iunknown::IUnknown, ComPtr};
 use libc::c_void;
 use std::cell::RefCell;
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
+use std::ffi::{OsStr, OsString};
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
 
 mod interface;
@@ -112,6 +112,24 @@ impl WebBrowser {
                 ptr::null_mut(),
                 ptr::null_mut(),
             );
+        }
+    }
+
+    fn prev(&self) {
+        unsafe {
+            self.inner.as_ref().unwrap().web_browser.go_back();
+        }
+    }
+
+    fn next(&self) {
+        unsafe {
+            self.inner.as_ref().unwrap().web_browser.go_forward();
+        }
+    }
+
+    fn refresh(&self) {
+        unsafe {
+            self.inner.as_ref().unwrap().web_browser.refresh();
         }
     }
 
@@ -270,6 +288,8 @@ unsafe extern "system" fn wndproc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    static mut EDIT_HWND: HWND = ptr::null_mut();
+
     match message {
         WM_CREATE => {
             let h_instance = GetModuleHandleW(ptr::null_mut());
@@ -323,22 +343,20 @@ unsafe extern "system" fn wndproc(
                 ptr::null_mut(),
             );
 
-            // let edit_handle = CreateWindowExW(
-            //     0,
-            //     to_wstring("EDIT").as_ptr(),
-            //     to_wstring("http://google.com/").as_ptr(),
-            //     WS_CHILD | WS_VISIBLE | WS_BORDER,
-            //     260,
-            //     10,
-            //     200,
-            //     20,
-            //     hwnd,
-            //     ptr::null_mut(),
-            //     h_instance,
-            //     lparam as _,
-            // );
-
-            // userdata.hwnd_addressbar = edit_handle;
+            EDIT_HWND = CreateWindowExW(
+                0,
+                to_wstring("EDIT").as_ptr(),
+                to_wstring("http://google.com/").as_ptr(),
+                WS_CHILD | WS_VISIBLE | WS_BORDER,
+                260,
+                10,
+                200,
+                20,
+                hwnd,
+                ptr::null_mut(),
+                h_instance,
+                lparam as _,
+            );
 
             CreateWindowExW(
                 0,
@@ -358,24 +376,27 @@ unsafe extern "system" fn wndproc(
             1
         }
         WM_COMMAND => {
+            let wb_ptr: *mut WebBrowser = std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+            if wb_ptr.is_null() {
+                return 1;
+            }
             let cmd = LOWORD(wparam as _);
             match cmd {
-                BTN_BACK => println!("go back"),
-                BTN_NEXT => println!("go forward"),
-                BTN_REFRESH => println!("refresh"),
+                BTN_BACK => (*wb_ptr).prev(),
+                BTN_NEXT => (*wb_ptr).next(),
+                BTN_REFRESH => (*wb_ptr).refresh(),
                 BTN_GO => {
-                    println!("go");
-                    // let mut buf: [u16; 1024] = [0; 1024];
-                    // let userdata: *mut Userdata = lparam as _;
-                    // let len =
-                    //     GetWindowTextW((*userdata).hwnd_addressbar, buf.as_mut_ptr(), buf.len() as _)
-                    //         as usize;
-                    // if len == 0 {
-                    //     return 1;
-                    // }
+                    let mut buf: [u16; 4096] = [0; 4096];
 
-                    // let s = OsString::from_wide(&buf[..len + 1]);
-                    // println!("{:?}", s);
+                    let len = GetWindowTextW(EDIT_HWND, buf.as_mut_ptr(), buf.len() as _);
+                    let len = len as usize;
+
+                    if len == 0 {
+                        return 1;
+                    }
+
+                    let input = OsString::from_wide(&buf[..len + 1]);
+                    (*wb_ptr).navigate(&input.to_string_lossy());;
                 }
                 _ => {}
             }
