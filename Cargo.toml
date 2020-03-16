@@ -3,7 +3,7 @@ name = 'mshtml_webview'
 version = '0.1.0'
 authors = ['Richard Hozák <r.hozak@seznam.cz>']
 edition = '2018'
-license = "MIT OR Apache-2.0"
+license = 'MIT OR Apache-2.0'
 
 [dependencies]
 libc = '0.2'
@@ -25,5 +25,4 @@ features = [
 ]
 
 [dependencies.com]
-git = 'https://github.com/zxey/com-rs.git'
-branch = 'fix-user-fields'
+git = 'https://github.com/microsoft/com-rs.git'
