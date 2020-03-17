@@ -209,6 +209,8 @@ impl Default for OLEINPLACEFRAMEINFO {
     }
 }
 
+// Following are the interfaces that we do not implement, only use
+
 // #[com_interface("8856F961-340A-11D0-A96B-00C04FD705A2")] // CLSID
 // pub trait WebBrowserCLS : IUnknown {}
 
@@ -242,6 +244,17 @@ pub trait IDispatch: IUnknown {
     ) -> HRESULT;
 }
 
+// not all of these function have correct signatures,
+// we do not need to use them all,
+// so we do not specify the signature,
+// we only put them there, so the vtable is correct
+//
+// we use:
+// go_back, go_forward, navigate, refresh, get_document
+//
+// these function have correct signatures, some of these
+// have correct signatures by accident, because they do
+// not take any parameters
 #[com_interface("EAB22AC1-30C1-11CF-A7EB-0000C05BAE0B")]
 pub trait IWebBrowser: IDispatch {
     unsafe fn go_back(&self) -> HRESULT;
@@ -262,7 +275,7 @@ pub trait IWebBrowser: IDispatch {
     unsafe fn get_application(&self) -> HRESULT;
     unsafe fn get_parent(&self) -> HRESULT;
     unsafe fn get_container(&self) -> HRESULT;
-    unsafe fn get_document(&self) -> HRESULT;
+    unsafe fn get_document(&self, pp_disp: *mut *mut c_void) -> HRESULT;
     unsafe fn get_top_level_container(&self) -> HRESULT;
     unsafe fn get_type(&self) -> HRESULT;
     unsafe fn get_left(&self) -> HRESULT;
@@ -324,3 +337,8 @@ pub trait IWebBrowser: IDispatch {
 //     unsafe fn get_resizable(&self) -> HRESULT;
 //     unsafe fn put_resizable(&self) -> HRESULT;
 // }
+
+#[com_interface("626FC520-A41E-11cf-A731-00A0C9082637")]
+pub trait IHTMLDocument : IDispatch {
+    unsafe fn get_script(&self, pp_disp: *mut *mut c_void) -> HRESULT;
+}

@@ -1,17 +1,21 @@
-use winapi::shared::minwindef::*;
-use winapi::shared::ntdef::*;
-use winapi::shared::windef::*;
-use winapi::shared::winerror::{self, FAILED, S_OK};
-use winapi::um::errhandlingapi::*;
-use winapi::um::libloaderapi::*;
-use winapi::um::objidl::FORMATETC;
-use winapi::um::ole2::*;
-use winapi::um::winuser::*;
-use com::{co_class, interfaces::iunknown::IUnknown, ComPtr};
+use com::{co_class, interfaces::iunknown::IUnknown, ComPtr, ComRc};
 use libc::c_void;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
+use winapi::shared::guiddef::IID_NULL;
+use winapi::shared::minwindef::*;
+use winapi::shared::ntdef::*;
+use winapi::shared::windef::*;
+use winapi::shared::winerror::{self, FAILED, S_OK};
+use winapi::shared::wtypes::VT_BSTR;
+use winapi::um::errhandlingapi::*;
+use winapi::um::libloaderapi::*;
+use winapi::um::oaidl::{DISPID, DISPPARAMS, VARIANT};
+use winapi::um::objidl::FORMATETC;
+use winapi::um::ole2::*;
+use winapi::um::oleauto::{SysAllocString, SysFreeString};
+use winapi::um::winuser::*;
 
 mod interface;
 mod interface_impl;
@@ -108,6 +112,91 @@ impl WebBrowser {
                 ptr::null_mut(),
                 ptr::null_mut(),
             );
+        }
+    }
+
+    fn eval(&self, js: &str) {
+        let inner = self.inner.as_ref().unwrap();
+        unsafe {
+            let mut document_dispatch = ptr::null_mut::<c_void>();
+            let h_result = inner.web_browser.get_document(&mut document_dispatch);
+            if FAILED(h_result) || document_dispatch.is_null() {
+                panic!("get_document failed {}", h_result);
+            }
+
+            let document_dispatch =
+                ComRc::<dyn IDispatch>::from_raw(document_dispatch as *mut *mut _);
+
+            let html_document = document_dispatch
+                .get_interface::<dyn IHTMLDocument>()
+                .expect("cannot get IHTMLDocument interface");
+
+            let mut script_dispatch = ptr::null_mut::<c_void>();
+            let h_result = html_document.get_script(&mut script_dispatch);
+            if FAILED(h_result) || script_dispatch.is_null() {
+                panic!("get_script failed {}", h_result);
+            }
+
+            let script_dispatch = ComRc::<dyn IDispatch>::from_raw(script_dispatch as *mut *mut _);
+
+            let mut eval_name = to_wstring("eval");
+            let mut names = [eval_name.as_mut_ptr()];
+            let mut disp_ids = [DISPID::default()];
+            assert_eq!(names.len(), disp_ids.len());
+
+            // get_ids_of_names can fail if there is no loaded document
+            // should we hande this by loading empty document?
+
+            let h_result = script_dispatch.get_ids_of_names(
+                &IID_NULL,
+                names.as_mut_ptr(),
+                names.len() as _,
+                LOCALE_SYSTEM_DEFAULT,
+                disp_ids.as_mut_ptr(),
+            );
+            if FAILED(h_result) {
+                panic!("get_ids_of_names failed {}", h_result);
+            }
+
+            let js = to_wstring(js);
+
+            // we need to free this later
+            // with SysFreeString
+            let js = SysAllocString(js.as_ptr());
+            let mut varg = VARIANT::default();
+            varg.n1.n2_mut().vt = VT_BSTR as _;
+
+            // we cannot pass regular BSTR here,
+            // it needs to be allocated with SysAllocString
+            // which also allocates inner data for
+            // the specific BSTR such as refcount
+            *varg.n1.n2_mut().n3.bstrVal_mut() = js;
+
+            let mut args = [varg];
+            let mut disp_params = DISPPARAMS {
+                rgvarg: args.as_mut_ptr(),          // array of positional arguments
+                rgdispidNamedArgs: ptr::null_mut(), // array of dispids for named args
+                cArgs: args.len() as _,             // number of position arguments
+                cNamedArgs: 0,                      // number of named args - none
+            };
+            let h_result = script_dispatch.invoke(
+                disp_ids[0],
+                &IID_NULL,
+                0,
+                1,
+                &mut disp_params,
+                ptr::null_mut(), // should we implement result?
+                ptr::null_mut(),
+                ptr::null_mut(),
+            );
+
+            SysFreeString(js);
+
+            // this should be catchable by user,
+            // it does not always have to be irrecoverable error
+            if FAILED(h_result) {
+                panic!("invoke failed {}", h_result);
+            }
         }
     }
 
@@ -263,7 +352,7 @@ fn main() {
                 bottom: 300,
             },
         );
-        wb.navigate("http://google.com");
+        wb.navigate("blank.com");
 
         let wb_ptr = Box::into_raw(wb);
 
@@ -284,6 +373,7 @@ const BTN_BACK: WORD = 1;
 const BTN_NEXT: WORD = 2;
 const BTN_REFRESH: WORD = 3;
 const BTN_GO: WORD = 4;
+const BTN_EVAL: WORD = 5;
 
 unsafe extern "system" fn wndproc(
     hwnd: HWND,
@@ -375,6 +465,21 @@ unsafe extern "system" fn wndproc(
                 ptr::null_mut(),
             );
 
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("Eval").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                665,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_EVAL as _,
+                h_instance,
+                ptr::null_mut(),
+            );
+
             1
         }
         WM_COMMAND => {
@@ -400,6 +505,9 @@ unsafe extern "system" fn wndproc(
 
                     let input = OsString::from_wide(&buf[..len + 1]);
                     (*wb_ptr).navigate(&input.to_string_lossy());
+                }
+                BTN_EVAL => {
+                    (*wb_ptr).eval("alert('hello')");
                 }
                 _ => {}
             }

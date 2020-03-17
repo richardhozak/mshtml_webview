@@ -22,6 +22,9 @@ features = [
     'ole2',
     'winuser',
     'oaidl',
+    'guiddef',
+    'wtypes',
+    'oleauto'
 ]
 
 [dependencies.com]
