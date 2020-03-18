@@ -292,59 +292,165 @@ impl WebBrowser {
 //     unsafe fn lock_container(&self, f_lock: BOOL) -> HRESULT;
 // }
 
-fn main() {
-    unsafe {
-        let result = OleInitialize(ptr::null_mut());
-        if result != S_OK && result != winerror::S_FALSE {
-            panic!("could not initialize ole");
-        }
+struct Window {
+    h_wnd: HWND,
+    fullscreen: bool,
+    saved_style: LONG,
+    saved_ex_style: LONG,
+    saved_rect: RECT,
+}
 
-        let h_instance = GetModuleHandleW(ptr::null_mut());
-        if h_instance.is_null() {
-            panic!("could not retrieve module handle");
-        }
+impl Window {
+    fn new() -> Self {
+        // TODO: move some of this logic into some sort of event loop or main application
+        // the idea is to have application, that can spawn windows and webviews that
+        // can be spawned multiple times into these windows
 
-        let class_name = to_wstring("webview");
-        let class = WNDCLASSW {
-            style: 0,
-            lpfnWndProc: Some(wndproc),
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            hInstance: h_instance,
-            hIcon: ptr::null_mut(),
-            hCursor: LoadCursorW(ptr::null_mut(), IDC_ARROW),
-            hbrBackground: COLOR_WINDOW as _,
-            lpszMenuName: ptr::null(),
-            lpszClassName: class_name.as_ptr(),
-        };
+        unsafe {
+            let result = OleInitialize(ptr::null_mut());
+            if result != S_OK && result != winerror::S_FALSE {
+                panic!("could not initialize ole");
+            }
+            let h_instance = GetModuleHandleW(ptr::null_mut());
+            if h_instance.is_null() {
+                panic!("could not retrieve module handle");
+            }
+            let class_name = to_wstring("webview");
+            let class = WNDCLASSW {
+                style: 0,
+                lpfnWndProc: Some(wndproc),
+                cbClsExtra: 0,
+                cbWndExtra: 0,
+                hInstance: h_instance,
+                hIcon: ptr::null_mut(),
+                hCursor: LoadCursorW(ptr::null_mut(), IDC_ARROW),
+                hbrBackground: COLOR_WINDOW as _,
+                lpszMenuName: ptr::null(),
+                lpszClassName: class_name.as_ptr(),
+            };
+            if RegisterClassW(&class) == 0 {
+                // ignore the "Class already exists" error for multiple windows
+                if GetLastError() as u32 != 1410 {
+                    OleUninitialize();
+                    panic!("could not register window class {}", GetLastError() as u32);
+                }
+            }
+            let title = to_wstring("mshtml_webview");
+            let h_wnd = CreateWindowExW(
+                0,
+                class_name.as_ptr(),
+                title.as_ptr(),
+                WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                HWND_DESKTOP,
+                ptr::null_mut(),
+                h_instance,
+                ptr::null_mut(),
+            );
 
-        if RegisterClassW(&class) == 0 {
-            // ignore the "Class already exists" error for multiple windows
-            if GetLastError() as u32 != 1410 {
-                OleUninitialize();
-                panic!("could not register window class {}", GetLastError() as u32);
+            Window {
+                h_wnd,
+                fullscreen: false,
+                saved_style: 0,
+                saved_ex_style: 0,
+                saved_rect: Default::default(),
             }
         }
+    }
 
-        let title = to_wstring("mshtml_webview");
-        let h_wnd = CreateWindowExW(
-            0,
-            class_name.as_ptr(),
-            title.as_ptr(),
-            WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            HWND_DESKTOP,
-            ptr::null_mut(),
-            h_instance,
-            ptr::null_mut(),
-        );
+    fn handle(&self) -> HWND {
+        self.h_wnd
+    }
+
+    fn save_style(&mut self) {
+        unsafe {
+            self.saved_style = GetWindowLongW(self.h_wnd, GWL_STYLE);
+            self.saved_ex_style = GetWindowLongW(self.h_wnd, GWL_EXSTYLE);
+            GetWindowRect(self.h_wnd, &mut self.saved_rect);
+        }
+    }
+
+    fn restore_style(&self) {
+        unsafe {
+            SetWindowLongW(self.h_wnd, GWL_STYLE, self.saved_style);
+            SetWindowLongW(self.h_wnd, GWL_EXSTYLE, self.saved_ex_style);
+            let rect = &self.saved_rect;
+            SetWindowPos(
+                self.h_wnd,
+                ptr::null_mut(),
+                rect.left,
+                rect.top,
+                rect.right - rect.left,
+                rect.bottom - rect.top,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
+        }
+    }
+
+    fn set_fullscreen(&mut self, fullscreen: bool) {
+        if self.fullscreen == fullscreen {
+            return;
+        }
+
+        if !self.fullscreen {
+            self.save_style();
+        }
+
+        self.fullscreen = fullscreen;
+
+        if !self.fullscreen {
+            self.restore_style();
+            return;
+        }
+
+        unsafe {
+            let mut monitor_info: MONITORINFO = Default::default();
+            monitor_info.cbSize = std::mem::size_of::<MONITORINFO>() as _;
+            GetMonitorInfoW(
+                MonitorFromWindow(self.h_wnd, MONITOR_DEFAULTTONEAREST),
+                &mut monitor_info,
+            );
+
+            SetWindowLongW(
+                self.h_wnd,
+                GWL_STYLE,
+                self.saved_style & !(WS_CAPTION | WS_THICKFRAME) as LONG,
+            );
+
+            SetWindowLongW(
+                self.h_wnd,
+                GWL_EXSTYLE,
+                self.saved_ex_style
+                    & !(WS_EX_DLGMODALFRAME
+                        | WS_EX_WINDOWEDGE
+                        | WS_EX_CLIENTEDGE
+                        | WS_EX_STATICEDGE) as LONG,
+            );
+
+            let rect = &monitor_info.rcMonitor;
+            SetWindowPos(
+                self.h_wnd,
+                ptr::null_mut(),
+                rect.left,
+                rect.top,
+                rect.right - rect.left,
+                rect.bottom - rect.top,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
+        }
+    }
+}
+
+fn main() {
+    unsafe {
+        let mut window = Window::new();
 
         let mut wb = WebBrowser::new();
         wb.initialize(
-            h_wnd,
+            window.handle(),
             RECT {
                 left: 0,
                 right: 300,
@@ -356,8 +462,8 @@ fn main() {
 
         let wb_ptr = Box::into_raw(wb);
 
-        SetWindowLongPtrW(h_wnd, GWLP_USERDATA, std::mem::transmute(wb_ptr));
-        ShowWindow(h_wnd, SW_SHOWDEFAULT);
+        SetWindowLongPtrW(window.handle(), GWLP_USERDATA, std::mem::transmute(wb_ptr));
+        ShowWindow(window.handle(), SW_SHOWDEFAULT);
 
         let mut message: MSG = Default::default();
         while GetMessageW(&mut message, ptr::null_mut(), 0, 0) > 0 {
