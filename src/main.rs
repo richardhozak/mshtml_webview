@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use com::{co_class, interfaces::iunknown::IUnknown, ComPtr, ComRc};
 use libc::c_void;
 use std::ffi::{OsStr, OsString};
@@ -8,13 +11,13 @@ use winapi::shared::minwindef::*;
 use winapi::shared::ntdef::*;
 use winapi::shared::windef::*;
 use winapi::shared::winerror::{self, FAILED, S_OK};
-use winapi::shared::wtypes::VT_BSTR;
+use winapi::shared::wtypes::{VARTYPE, VT_BSTR, VT_VARIANT};
 use winapi::um::errhandlingapi::*;
 use winapi::um::libloaderapi::*;
-use winapi::um::oaidl::{DISPID, DISPPARAMS, VARIANT};
+use winapi::um::oaidl::{DISPID, DISPPARAMS, SAFEARRAY, SAFEARRAYBOUND, VARIANT};
 use winapi::um::objidl::FORMATETC;
 use winapi::um::ole2::*;
-use winapi::um::oleauto::{SysAllocString, SysFreeString};
+use winapi::um::oleauto::{SafeArrayAccessData, SafeArrayDestroy, SysAllocString, SysFreeString};
 use winapi::um::winuser::*;
 
 mod interface;
@@ -47,6 +50,9 @@ extern "stdcall" {
     fn OleSetContainedObject(p_unknown: *mut c_void, f_contained: BOOL) -> HRESULT;
 
     fn ExitProcess(exit_code: UINT);
+
+    fn SafeArrayCreate(vt: VARTYPE, c_dims: UINT, rgsabound: *mut SAFEARRAYBOUND)
+        -> *mut SAFEARRAY;
 }
 
 extern "system" {
@@ -112,6 +118,58 @@ impl WebBrowser {
                 ptr::null_mut(),
                 ptr::null_mut(),
             );
+        }
+    }
+
+    fn write(&self, document: &str) {
+        println!("writing {}", document);
+        let inner = self.inner.as_ref().unwrap();
+        unsafe {
+            let mut document_dispatch = ptr::null_mut::<c_void>();
+            let h_result = inner.web_browser.get_document(&mut document_dispatch);
+            if FAILED(h_result) || document_dispatch.is_null() {
+                panic!("get_document failed {}", h_result);
+            }
+
+            let document_dispatch =
+                ComRc::<dyn IDispatch>::from_raw(document_dispatch as *mut *mut _);
+
+            let html_document2 = document_dispatch
+                .get_interface::<dyn IHTMLDocument2>()
+                .expect("cannot get IHTMLDocument2 interface");
+
+            let mut bound = SAFEARRAYBOUND {
+                cElements: 1,
+                lLbound: 0,
+            };
+            let safe_array = SafeArrayCreate(VT_VARIANT as _, 1, &mut bound);
+            if safe_array.is_null() {
+                panic!("SafeArrayCreate failed");
+            }
+            let mut data: [*mut VARIANT; 1] = [ptr::null_mut()];
+            let h_result = SafeArrayAccessData(safe_array, data.as_mut_ptr() as _);
+            if FAILED(h_result) {
+                panic!("SafeArrayAccessData failed");
+            }
+
+            let document = to_wstring(document);
+            let document = SysAllocString(document.as_ptr());
+
+            if document.is_null() {
+                panic!("SysAllocString document failed");
+            }
+            let variant = &mut (*data[0]);
+            variant.n1.n2_mut().vt = VT_BSTR as _;
+            *variant.n1.n2_mut().n3.bstrVal_mut() = document;
+            if FAILED(html_document2.write(safe_array)) {
+                panic!("html_document2.write() failed");
+            }
+            if FAILED(html_document2.close()) {
+                panic!("html_document2.close() failed");
+            }
+
+            SysFreeString(document);
+            SafeArrayDestroy(safe_array);
         }
     }
 
@@ -458,7 +516,7 @@ fn main() {
                 bottom: 300,
             },
         );
-        wb.navigate("blank.com");
+        wb.navigate("about:blank");
 
         let wb_ptr = Box::into_raw(wb);
 
@@ -480,6 +538,7 @@ const BTN_NEXT: WORD = 2;
 const BTN_REFRESH: WORD = 3;
 const BTN_GO: WORD = 4;
 const BTN_EVAL: WORD = 5;
+const BTN_WRITE_DOC: WORD = 6;
 
 unsafe extern "system" fn wndproc(
     hwnd: HWND,
@@ -544,7 +603,7 @@ unsafe extern "system" fn wndproc(
             EDIT_HWND = CreateWindowExW(
                 0,
                 to_wstring("EDIT").as_ptr(),
-                to_wstring("http://google.com/").as_ptr(),
+                to_wstring("http://example.com/").as_ptr(),
                 WS_CHILD | WS_VISIBLE | WS_BORDER,
                 260,
                 10,
@@ -586,6 +645,21 @@ unsafe extern "system" fn wndproc(
                 ptr::null_mut(),
             );
 
+            CreateWindowExW(
+                0,
+                to_wstring("BUTTON").as_ptr(),
+                to_wstring("Write").as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                750,
+                5,
+                80,
+                30,
+                hwnd,
+                BTN_WRITE_DOC as _,
+                h_instance,
+                ptr::null_mut(),
+            );
+
             1
         }
         WM_COMMAND => {
@@ -614,6 +688,9 @@ unsafe extern "system" fn wndproc(
                 }
                 BTN_EVAL => {
                     (*wb_ptr).eval("alert('hello')");
+                }
+                BTN_WRITE_DOC => {
+                    (*wb_ptr).write("<p>Hello world!</p>");
                 }
                 _ => {}
             }
