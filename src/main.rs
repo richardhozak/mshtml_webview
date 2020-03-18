@@ -11,13 +11,15 @@ use winapi::shared::minwindef::*;
 use winapi::shared::ntdef::*;
 use winapi::shared::windef::*;
 use winapi::shared::winerror::{self, FAILED, S_OK};
-use winapi::shared::wtypes::{VARTYPE, VT_BSTR, VT_VARIANT};
+use winapi::shared::wtypes::{VT_BSTR, VT_VARIANT};
 use winapi::um::errhandlingapi::*;
 use winapi::um::libloaderapi::*;
-use winapi::um::oaidl::{DISPID, DISPPARAMS, SAFEARRAY, SAFEARRAYBOUND, VARIANT};
+use winapi::um::oaidl::{DISPID, DISPPARAMS, VARIANT};
 use winapi::um::objidl::FORMATETC;
 use winapi::um::ole2::*;
-use winapi::um::oleauto::{SafeArrayAccessData, SafeArrayDestroy, SysAllocString, SysFreeString};
+use winapi::um::oleauto::{
+    SafeArrayAccessData, SafeArrayCreateVector, SafeArrayDestroy, SysAllocString, SysFreeString,
+};
 use winapi::um::winuser::*;
 
 mod interface;
@@ -50,9 +52,6 @@ extern "stdcall" {
     fn OleSetContainedObject(p_unknown: *mut c_void, f_contained: BOOL) -> HRESULT;
 
     fn ExitProcess(exit_code: UINT);
-
-    fn SafeArrayCreate(vt: VARTYPE, c_dims: UINT, rgsabound: *mut SAFEARRAYBOUND)
-        -> *mut SAFEARRAY;
 }
 
 extern "system" {
@@ -138,11 +137,7 @@ impl WebBrowser {
                 .get_interface::<dyn IHTMLDocument2>()
                 .expect("cannot get IHTMLDocument2 interface");
 
-            let mut bound = SAFEARRAYBOUND {
-                cElements: 1,
-                lLbound: 0,
-            };
-            let safe_array = SafeArrayCreate(VT_VARIANT as _, 1, &mut bound);
+            let safe_array = SafeArrayCreateVector(VT_VARIANT as _, 0, 1);
             if safe_array.is_null() {
                 panic!("SafeArrayCreate failed");
             }
