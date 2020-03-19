@@ -209,10 +209,87 @@ impl Default for OLEINPLACEFRAMEINFO {
     }
 }
 
-// Following are the interfaces that we do not implement, only use
+#[com_interface("bd3f23c0-d43e-11cf-893b-00aa00bdce1a")]
+pub trait IDocHostUIHandler: IUnknown {
+    unsafe fn show_context_menu(
+        &self,
+        dw_id: DWORD,
+        ppt: *mut POINT,
+        pcmdt_reserved: *mut c_void, /*IUnknown*/
+        pdisp_reserved: *mut c_void, /*IDispatch*/
+    ) -> HRESULT;
+    unsafe fn get_host_info(&self, p_info: *mut c_void /*DOCHOSTUIINFO*/) -> HRESULT;
+    unsafe fn show_ui(
+        &self,
+        dw_id: DWORD,
+        p_active_object: *mut c_void,  /*IOleInPlaceActiveObject*/
+        p_command_target: *mut c_void, /*IOleCommandTarget*/
+        p_frame: *mut c_void,          /*IOleInPlaceFrame*/
+        p_doc: *mut c_void,            /*IOleInPlaceUIWindow*/
+    ) -> HRESULT;
+    unsafe fn hide_ui(&self) -> HRESULT;
+    unsafe fn update_ui(&self) -> HRESULT;
+    unsafe fn enable_modeless(&self, f_enable: BOOL) -> HRESULT;
+    unsafe fn on_doc_window_activate(&self, f_activate: BOOL) -> HRESULT;
+    unsafe fn on_frame_window_activate(&self, f_activate: BOOL) -> HRESULT;
+    unsafe fn resize_border(
+        &self,
+        prc_border: LPCRECT,
+        p_ui_window: *mut c_void, /*IOleInPlaceUIWindow*/
+        f_rame_window: BOOL,
+    ) -> HRESULT;
+    unsafe fn translate_accelerator(
+        &self,
+        lp_msg: LPMSG,
+        pguid_cmd_group: *const GUID,
+        n_cmd_id: DWORD,
+    ) -> HRESULT;
+    unsafe fn get_option_key_path(&self, pch_key: *mut LPOLESTR, dw: DWORD) -> HRESULT;
+    unsafe fn get_drop_target(
+        &self,
+        p_drop_target: *mut c_void,       /*IDropTarget*/
+        pp_drop_target: *mut *mut c_void, /*IDropTarget*/
+    ) -> HRESULT;
+    unsafe fn get_external(&self, pp_dispatch: *mut *mut c_void /*IDispatch*/) -> HRESULT;
+    unsafe fn translate_url(
+        &self,
+        dw_translate: DWORD,
+        pch_url_in: LPWSTR,
+        ppch_url_out: *mut LPWSTR,
+    ) -> HRESULT;
+    unsafe fn filter_data_object(
+        &self,
+        p_do: *mut c_void,           /*IDataObject*/
+        pp_do_ret: *mut *mut c_void, /*IDataObject*/
+    ) -> HRESULT;
+}
 
-// #[com_interface("8856F961-340A-11D0-A96B-00C04FD705A2")] // CLSID
-// pub trait WebBrowserCLS : IUnknown {}
+// #[com_interface("00020400-0000-0000-C000-000000000046")]
+// pub trait IDispatch: IUnknown {
+//     unsafe fn get_type_info_count(pctinfo: *mut UINT) -> HRESULT;
+//     unsafe fn get_type_info(
+//         i_t_info: UINT,
+//         lcid: LCID,
+//         pp_t_info: *mut *mut c_void, /*ITypeInfo*/
+//     ) -> HRESULT;
+//     unsafe fn get_i_ds_of_names(
+//         riid: REFIID,
+//         rgsz_names: *mut LPOLESTR,
+//         c_names: UINT,
+//         lcid: LCID,
+//         rg_disp_id: *mut DISPID,
+//     ) -> HRESULT;
+//     unsafe fn invoke(
+//         disp_id_member: DISPID,
+//         riid: REFIID,
+//         lcid: LCID,
+//         w_flags: WORD,
+//         p_disp_params: *mut DISPPARAMS,
+//         p_var_result: *mut VARIANT,
+//         p_excep_info: *mut EXCEPINFO,
+//         pu_arg_err: *mut UINT,
+//     ) -> HRESULT;
+// }
 
 #[com_interface("00020400-0000-0000-C000-000000000046")]
 pub trait IDispatch: IUnknown {
@@ -243,6 +320,11 @@ pub trait IDispatch: IUnknown {
         pu_arg_err: *mut UINT,
     ) -> HRESULT;
 }
+
+// #[com_interface("8856F961-340A-11D0-A96B-00C04FD705A2")] // CLSID
+// pub trait WebBrowserCLS : IUnknown {}
+
+// Following are the interfaces that we do not implement, only use
 
 // not all of these function have correct signatures,
 // we do not need to use them all,

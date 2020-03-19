@@ -1,7 +1,20 @@
 use super::interface::*;
 use super::WebBrowser;
+use libc::c_void;
+use winapi::shared::guiddef::IID;
+use winapi::shared::minwindef::UINT;
+use winapi::shared::minwindef::WORD;
+use winapi::shared::ntdef::LCID;
+use winapi::shared::winerror::HRESULT;
+use winapi::shared::wtypesbase::LPOLESTR;
+use winapi::um::oaidl::DISPID;
+use winapi::um::oaidl::DISPPARAMS;
+use winapi::um::oaidl::EXCEPINFO;
+use winapi::um::oaidl::VARIANT;
 
-use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, E_PENDING, S_OK};
+use com::interfaces::IUnknown;
+
+use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, E_PENDING, S_FALSE, S_OK};
 
 use std::ptr;
 
@@ -201,6 +214,124 @@ impl IStorage for WebBrowser {
         E_NOTIMPL
     }
     unsafe fn stat(&self, _: *mut winapi::um::objidlbase::STATSTG, _: u32) -> i32 {
+        E_NOTIMPL
+    }
+}
+
+impl IDocHostUIHandler for WebBrowser {
+    unsafe fn show_context_menu(
+        &self,
+        _: u32,
+        _: *mut winapi::shared::windef::POINT,
+        _: *mut core::ffi::c_void,
+        _: *mut core::ffi::c_void,
+    ) -> i32 {
+        S_OK
+    }
+    unsafe fn get_host_info(&self, _: *mut core::ffi::c_void) -> i32 {
+        E_NOTIMPL
+    }
+    unsafe fn show_ui(
+        &self,
+        _: u32,
+        _: *mut core::ffi::c_void,
+        _: *mut core::ffi::c_void,
+        _: *mut core::ffi::c_void,
+        _: *mut core::ffi::c_void,
+    ) -> i32 {
+        S_OK
+    }
+    unsafe fn hide_ui(&self) -> i32 {
+        S_OK
+    }
+    unsafe fn update_ui(&self) -> i32 {
+        S_OK
+    }
+    unsafe fn enable_modeless(&self, _: i32) -> i32 {
+        S_OK
+    }
+    unsafe fn on_doc_window_activate(&self, _: i32) -> i32 {
+        S_OK
+    }
+    unsafe fn on_frame_window_activate(&self, _: i32) -> i32 {
+        S_OK
+    }
+    unsafe fn resize_border(
+        &self,
+        _: *const winapi::shared::windef::RECT,
+        _: *mut core::ffi::c_void,
+        _: i32,
+    ) -> i32 {
+        S_OK
+    }
+    unsafe fn translate_accelerator(
+        &self,
+        _: *mut winapi::um::winuser::MSG,
+        _: *const winapi::shared::guiddef::GUID,
+        _: u32,
+    ) -> i32 {
+        S_FALSE
+    }
+    unsafe fn get_option_key_path(&self, _: *mut *mut u16, _: u32) -> i32 {
+        S_FALSE
+    }
+    unsafe fn get_drop_target(
+        &self,
+        _: *mut core::ffi::c_void,
+        _: *mut *mut core::ffi::c_void,
+    ) -> i32 {
+        S_FALSE
+    }
+    unsafe fn get_external(&self, external: *mut *mut core::ffi::c_void) -> i32 {
+        self.query_interface(&<dyn IDispatch as com::ComInterface>::IID, external)
+    }
+    unsafe fn translate_url(&self, _: u32, _: *mut u16, ppch_url_out: *mut *mut u16) -> i32 {
+        *ppch_url_out = ptr::null_mut();
+        S_FALSE
+    }
+    unsafe fn filter_data_object(
+        &self,
+        _: *mut core::ffi::c_void,
+        pp_do_ret: *mut *mut core::ffi::c_void,
+    ) -> i32 {
+        *pp_do_ret = ptr::null_mut();
+        S_FALSE
+    }
+}
+
+impl IDispatch for WebBrowser {
+    unsafe fn get_type_info_count(&self, pctinfo: *mut UINT) -> HRESULT {
+        E_NOTIMPL
+    }
+    unsafe fn get_type_info(
+        &self,
+        i_ti_info: UINT,
+        icid: LCID,
+        pp_ti_info: *mut *mut c_void,
+    ) -> HRESULT {
+        E_NOTIMPL
+    }
+    unsafe fn get_ids_of_names(
+        &self,
+        riid: *const IID,
+        rgsz_names: *mut LPOLESTR,
+        c_names: UINT,
+        lcid: LCID,
+        rg_disp_id: *mut DISPID,
+    ) -> HRESULT {
+        E_NOTIMPL
+    }
+    unsafe fn invoke(
+        &self,
+        disp_id_member: DISPID,
+        riid: *const IID,
+        lcid: LCID,
+        w_flags: WORD,
+        p_disp_params: *mut DISPPARAMS,
+        p_var_result: *mut VARIANT,
+        p_excep_info: *mut EXCEPINFO,
+        pu_arg_err: *mut UINT,
+    ) -> HRESULT {
         E_NOTIMPL
     }
 }
