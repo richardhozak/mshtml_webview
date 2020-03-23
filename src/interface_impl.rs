@@ -1,22 +1,25 @@
 use super::interface::*;
-use super::WebBrowser;
+use super::{ExternalInvokeReceiver, WebBrowser};
+
+use com::interfaces::IUnknown;
 use libc::c_void;
+use std::ffi::OsString;
 use winapi::shared::guiddef::IID;
 use winapi::shared::minwindef::UINT;
 use winapi::shared::minwindef::WORD;
 use winapi::shared::ntdef::LCID;
 use winapi::shared::winerror::HRESULT;
+use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, E_PENDING, S_FALSE, S_OK};
+use winapi::shared::wtypes::VARTYPE;
+use winapi::shared::wtypes::VT_BSTR;
 use winapi::shared::wtypesbase::LPOLESTR;
 use winapi::um::oaidl::DISPID;
 use winapi::um::oaidl::DISPPARAMS;
 use winapi::um::oaidl::EXCEPINFO;
 use winapi::um::oaidl::VARIANT;
 
-use com::interfaces::IUnknown;
-
-use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, E_PENDING, S_FALSE, S_OK};
-
 use std::ptr;
+use std::ptr::NonNull;
 
 impl IOleClientSite for WebBrowser {
     unsafe fn save_object(&self) -> i32 {
@@ -283,7 +286,11 @@ impl IDocHostUIHandler for WebBrowser {
         S_FALSE
     }
     unsafe fn get_external(&self, external: *mut *mut core::ffi::c_void) -> i32 {
-        self.query_interface(&<dyn IDispatch as com::ComInterface>::IID, external)
+        println!("get external");
+        let inner = self.inner.as_ref().unwrap();
+        (*inner.invoke_receiver).add_ref();
+        *external = inner.invoke_receiver as _;
+        S_OK
     }
     unsafe fn translate_url(&self, _: u32, _: *mut u16, ppch_url_out: *mut *mut u16) -> i32 {
         *ppch_url_out = ptr::null_mut();
@@ -299,9 +306,26 @@ impl IDocHostUIHandler for WebBrowser {
     }
 }
 
-impl IDispatch for WebBrowser {
+unsafe fn from_wstring(ptr: *const u16) -> OsString {
+    use std::os::windows::ffi::OsStringExt;
+
+    let len = (0..).take_while(|&i| *ptr.offset(i) != 0).count();
+    let slice = std::slice::from_raw_parts(ptr, len);
+
+    OsString::from_wide(slice)
+}
+
+unsafe fn from_utf16(ptr: *const u16) -> String {
+    let len = (0..).take_while(|&i| *ptr.offset(i) != 0).count();
+    let slice = std::slice::from_raw_parts(ptr, len);
+    String::from_utf16(slice).expect("invalid utf16")
+}
+
+const WEBVIEW_JS_INVOKE_ID: DISPID = 0x1000;
+
+impl IDispatch for ExternalInvokeReceiver {
     unsafe fn get_type_info_count(&self, pctinfo: *mut UINT) -> HRESULT {
-        E_NOTIMPL
+        S_OK
     }
     unsafe fn get_type_info(
         &self,
@@ -309,7 +333,7 @@ impl IDispatch for WebBrowser {
         icid: LCID,
         pp_ti_info: *mut *mut c_void,
     ) -> HRESULT {
-        E_NOTIMPL
+        S_OK
     }
     unsafe fn get_ids_of_names(
         &self,
@@ -319,7 +343,17 @@ impl IDispatch for WebBrowser {
         lcid: LCID,
         rg_disp_id: *mut DISPID,
     ) -> HRESULT {
-        E_NOTIMPL
+        let names = std::slice::from_raw_parts(rgsz_names, c_names as _);
+        if names.len() == 1 {
+            let name = from_wstring(names[0]);
+            if name == "invoke" {
+                // map the invoke function on external object to this id
+                *rg_disp_id.offset(0) = WEBVIEW_JS_INVOKE_ID;
+                return S_OK;
+            }
+        }
+
+        S_FALSE
     }
     unsafe fn invoke(
         &self,
@@ -332,6 +366,31 @@ impl IDispatch for WebBrowser {
         p_excep_info: *mut EXCEPINFO,
         pu_arg_err: *mut UINT,
     ) -> HRESULT {
-        E_NOTIMPL
+        // first we check if the message the webview is trying to
+        // invoke is the method we gave it in get_ids_of_names
+        // through the custom id we specified
+        if disp_id_member == WEBVIEW_JS_INVOKE_ID {
+            let params = NonNull::new(p_disp_params).expect("p_disp_params is null");
+            let params = params.as_ref();
+            let vargs = std::slice::from_raw_parts(params.rgvarg, params.cArgs as _);
+
+            // we only handle invoke function which has only one positional argument
+            // and the argument needs to be string
+            if vargs.len() == 1 {
+                let varg = &vargs[0];
+
+                // check if the argument is string,
+                // convert it to String from utf16
+                // and pass it further
+                if varg.n1.n2().vt == VT_BSTR as VARTYPE {
+                    let arg = *varg.n1.n2().n3.bstrVal();
+                    let arg = from_utf16(arg);
+                    self.invoke_callback(arg);
+                    return S_OK;
+                }
+            }
+        }
+
+        S_FALSE
     }
 }

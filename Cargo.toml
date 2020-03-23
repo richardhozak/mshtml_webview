@@ -28,4 +28,5 @@ features = [
 ]
 
 [dependencies.com]
-git = 'https://github.com/microsoft/com-rs.git'
+git = 'https://github.com/zxey/com-rs.git'
+branch = 'more-interfaces'

@@ -58,7 +58,7 @@ extern "system" {
     fn OleUninitialize();
 }
 
-#[co_class(implements(IOleClientSite, IOleInPlaceSite, IStorage))]
+#[co_class(implements(IOleClientSite, IOleInPlaceSite, IStorage, IDocHostUIHandler))]
 struct WebBrowser {
     inner: Option<WebBrowserInner>,
 }
@@ -68,6 +68,38 @@ struct WebBrowserInner {
     rect: RECT,
     ole_in_place_object: ComPtr<dyn IOleInPlaceObject>,
     web_browser: ComPtr<dyn IWebBrowser>,
+    invoke_receiver: *mut ExternalInvokeReceiver, // this should be ComPtr
+}
+
+#[co_class(implements(IDispatch))]
+struct ExternalInvokeReceiver {
+    h_wnd: HWND,
+}
+
+const INVOKE_CALLBACK_MSG: UINT = WM_USER + 1;
+
+impl ExternalInvokeReceiver {
+    fn new() -> Box<ExternalInvokeReceiver> {
+        ExternalInvokeReceiver::allocate(ptr::null_mut())
+    }
+
+    fn set_target(&mut self, h_wnd: HWND) {
+        self.h_wnd = h_wnd;
+    }
+
+    fn invoke_callback(&self, data: String) {
+        println!("invoke callback");
+        let data = Box::new(data);
+        let data = Box::into_raw(data);
+        unsafe {
+            SendMessageW(
+                self.h_wnd,
+                INVOKE_CALLBACK_MSG,
+                0,
+                std::mem::transmute(data),
+            );
+        }
+    }
 }
 
 impl WebBrowser {
@@ -316,11 +348,16 @@ impl WebBrowser {
                 .get_interface::<dyn IWebBrowser>()
                 .expect("get interface IWebBrowser failed");
 
+            let mut invoke_receiver = ExternalInvokeReceiver::new();
+            invoke_receiver.set_target(h_wnd);
+            let invoke_receiver = Box::into_raw(invoke_receiver);
+
             self.inner = Some(WebBrowserInner {
                 hwnd_parent: h_wnd,
                 rect,
                 ole_in_place_object,
                 web_browser,
+                invoke_receiver,
             });
 
             let hresult = ioleobject.do_verb(
@@ -682,7 +719,8 @@ unsafe extern "system" fn wndproc(
                     (*wb_ptr).navigate(&input.to_string_lossy());
                 }
                 BTN_EVAL => {
-                    (*wb_ptr).eval("alert('hello')");
+                    (*wb_ptr).eval("external.invoke('test');");
+                    // (*wb_ptr).eval("alert('hello');");
                 }
                 BTN_WRITE_DOC => {
                     (*wb_ptr).write("<p>Hello world!</p>");
@@ -706,6 +744,19 @@ unsafe extern "system" fn wndproc(
         }
         WM_DESTROY => {
             ExitProcess(0);
+            1
+        }
+        INVOKE_CALLBACK_MSG => {
+            let wb_ptr: *mut WebBrowser =
+                std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+            if wb_ptr.is_null() {
+                return 1;
+            }
+
+            let data: *mut String = std::mem::transmute(lparam);
+            let data = Box::from_raw(data);
+            println!("got data {}", data);
+
             1
         }
         _ => DefWindowProcW(hwnd, message, wparam, lparam),
