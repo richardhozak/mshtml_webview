@@ -1,25 +1,22 @@
 use super::interface::*;
 use super::{ExternalInvokeReceiver, WebBrowser};
 
-use com::interfaces::IUnknown;
 use libc::c_void;
 use std::ffi::OsString;
-use winapi::shared::guiddef::IID;
-use winapi::shared::minwindef::UINT;
-use winapi::shared::minwindef::WORD;
-use winapi::shared::ntdef::LCID;
-use winapi::shared::winerror::HRESULT;
-use winapi::shared::winerror::{E_FAIL, E_NOINTERFACE, E_NOTIMPL, E_PENDING, S_FALSE, S_OK};
-use winapi::shared::wtypes::VARTYPE;
-use winapi::shared::wtypes::VT_BSTR;
-use winapi::shared::wtypesbase::LPOLESTR;
-use winapi::um::oaidl::DISPID;
-use winapi::um::oaidl::DISPPARAMS;
-use winapi::um::oaidl::EXCEPINFO;
-use winapi::um::oaidl::VARIANT;
-
 use std::ptr;
 use std::ptr::NonNull;
+
+use winapi::shared::guiddef::IID;
+use winapi::shared::minwindef::{UINT, WORD};
+use winapi::shared::ntdef::LCID;
+use winapi::shared::winerror::{
+    E_FAIL, E_NOINTERFACE, E_NOTIMPL, E_PENDING, HRESULT, S_FALSE, S_OK,
+};
+use winapi::shared::wtypes::{VARTYPE, VT_BSTR};
+use winapi::shared::wtypesbase::LPOLESTR;
+use winapi::um::oaidl::{DISPID, DISPPARAMS, EXCEPINFO, VARIANT};
+use com::interfaces::IUnknown;
+
 
 impl IOleClientSite for WebBrowser {
     unsafe fn save_object(&self) -> i32 {

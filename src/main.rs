@@ -7,16 +7,16 @@ use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
 use winapi::shared::guiddef::IID_NULL;
-use winapi::shared::minwindef::*;
-use winapi::shared::ntdef::*;
-use winapi::shared::windef::*;
-use winapi::shared::winerror::{self, FAILED, S_OK};
+use winapi::shared::minwindef::{BOOL, DWORD, LOWORD, LPARAM, LRESULT, UINT, WORD, WPARAM};
+use winapi::shared::ntdef::{LOCALE_SYSTEM_DEFAULT, LONG};
+use winapi::shared::windef::{HWND, RECT};
+use winapi::shared::winerror::{self, FAILED, HRESULT, S_OK};
 use winapi::shared::wtypes::{VT_BSTR, VT_VARIANT};
-use winapi::um::errhandlingapi::*;
-use winapi::um::libloaderapi::*;
+use winapi::um::errhandlingapi::GetLastError;
+use winapi::um::libloaderapi::GetModuleHandleW;
 use winapi::um::oaidl::{DISPID, DISPPARAMS, VARIANT};
 use winapi::um::objidl::FORMATETC;
-use winapi::um::ole2::*;
+use winapi::um::ole2::OleInitialize;
 use winapi::um::oleauto::{
     SafeArrayAccessData, SafeArrayCreateVector, SafeArrayDestroy, SysAllocString, SysFreeString,
 };
@@ -536,7 +536,7 @@ impl Window {
 
 fn main() {
     unsafe {
-        let mut window = Window::new();
+        let window = Window::new();
 
         let mut wb = WebBrowser::new();
         wb.initialize(
