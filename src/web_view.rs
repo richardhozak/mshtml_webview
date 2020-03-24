@@ -55,11 +55,11 @@ extern "stdcall" {
 }
 
 #[co_class(implements(IOleClientSite, IOleInPlaceSite, IStorage, IDocHostUIHandler))]
-pub(crate) struct WebBrowser {
-    inner: Option<WebBrowserInner>,
+pub(crate) struct WebView {
+    inner: Option<WebViewInner>,
 }
 
-struct WebBrowserInner {
+struct WebViewInner {
     hwnd_parent: HWND,
     rect: RECT,
     ole_in_place_object: ComPtr<dyn IOleInPlaceObject>,
@@ -98,7 +98,7 @@ impl ExternalInvokeReceiver {
     }
 }
 
-impl WebBrowser {
+impl WebView {
     /// A safe version of `QueryInterface`. If the backing CoClass implements the
     /// interface `I` then a `Some` containing an `ComRc` pointing to that
     /// interface will be returned otherwise `None` will be returned.
@@ -116,8 +116,8 @@ impl WebBrowser {
         Some(unsafe { ComPtr::new(ppv as *mut *mut _) })
     }
 
-    pub(crate) fn new() -> Box<WebBrowser> {
-        WebBrowser::allocate(None)
+    pub(crate) fn new() -> Box<WebView> {
+        WebView::allocate(None)
     }
 
     pub(crate) fn set_rect(&self, mut rect: RECT) {
@@ -348,7 +348,7 @@ impl WebBrowser {
             invoke_receiver.set_target(h_wnd);
             let invoke_receiver = Box::into_raw(invoke_receiver);
 
-            self.inner = Some(WebBrowserInner {
+            self.inner = Some(WebViewInner {
                 hwnd_parent: h_wnd,
                 rect,
                 ole_in_place_object,
@@ -374,7 +374,7 @@ impl WebBrowser {
 
 // Implementations of COM interfaces
 
-impl IOleClientSite for WebBrowser {
+impl IOleClientSite for WebView {
     unsafe fn save_object(&self) -> i32 {
         E_NOTIMPL
     }
@@ -408,7 +408,7 @@ impl IOleClientSite for WebBrowser {
     }
 }
 
-impl IOleWindow for WebBrowser {
+impl IOleWindow for WebView {
     unsafe fn get_window(&self, phwnd: *mut *mut winapi::shared::windef::HWND__) -> i32 {
         if self.inner.is_none() {
             *phwnd = ptr::null_mut();
@@ -423,7 +423,7 @@ impl IOleWindow for WebBrowser {
     }
 }
 
-impl IOleInPlaceSite for WebBrowser {
+impl IOleInPlaceSite for WebView {
     unsafe fn can_in_place_activate(&self) -> i32 {
         S_OK
     }
@@ -473,7 +473,7 @@ impl IOleInPlaceSite for WebBrowser {
     }
 }
 
-impl IStorage for WebBrowser {
+impl IStorage for WebView {
     unsafe fn create_stream(
         &self,
         _: *const u16,
@@ -574,7 +574,7 @@ impl IStorage for WebBrowser {
     }
 }
 
-impl IDocHostUIHandler for WebBrowser {
+impl IDocHostUIHandler for WebView {
     unsafe fn show_context_menu(
         &self,
         _: u32,

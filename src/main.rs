@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 
 mod interface;
-mod web_browser;
+mod web_view;
 
 use std::{
     ffi::{OsStr, OsString},
@@ -10,13 +10,12 @@ use std::{
     ptr,
 };
 
-use libc::c_void;
 use winapi::{
     shared::{
-        minwindef::{BOOL, DWORD, LOWORD, LPARAM, LRESULT, UINT, WORD, WPARAM},
+        minwindef::{LOWORD, LPARAM, LRESULT, UINT, WORD, WPARAM},
         ntdef::LONG,
         windef::{HWND, RECT},
-        winerror::{self, HRESULT, S_OK},
+        winerror::{S_FALSE, S_OK},
     },
     um::{
         errhandlingapi::GetLastError, libloaderapi::GetModuleHandleW, objidl::FORMATETC,
@@ -24,7 +23,7 @@ use winapi::{
     },
 };
 
-use web_browser::*;
+use web_view::*;
 
 const INVOKE_CALLBACK_MSG: UINT = WM_USER + 1;
 
@@ -57,7 +56,7 @@ impl Window {
 
         unsafe {
             let result = OleInitialize(ptr::null_mut());
-            if result != S_OK && result != winerror::S_FALSE {
+            if result != S_OK && result != S_FALSE {
                 panic!("could not initialize ole");
             }
             let h_instance = GetModuleHandleW(ptr::null_mut());
@@ -197,7 +196,7 @@ fn main() {
     unsafe {
         let window = Window::new();
 
-        let mut wb = WebBrowser::new();
+        let mut wb = WebView::new();
         wb.initialize(
             window.handle(),
             RECT {
@@ -354,7 +353,7 @@ unsafe extern "system" fn wndproc(
             1
         }
         WM_COMMAND => {
-            let wb_ptr: *mut WebBrowser =
+            let wb_ptr: *mut WebView =
                 std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
             if wb_ptr.is_null() {
                 return 1;
@@ -390,7 +389,7 @@ unsafe extern "system" fn wndproc(
             1
         }
         WM_SIZE => {
-            let wb_ptr: *mut WebBrowser =
+            let wb_ptr: *mut WebView =
                 std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
             if wb_ptr.is_null() {
                 return 1;
@@ -406,7 +405,7 @@ unsafe extern "system" fn wndproc(
             1
         }
         INVOKE_CALLBACK_MSG => {
-            let wb_ptr: *mut WebBrowser =
+            let wb_ptr: *mut WebView =
                 std::mem::transmute(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
             if wb_ptr.is_null() {
                 return 1;
