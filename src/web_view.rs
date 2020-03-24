@@ -85,7 +85,6 @@ impl ExternalInvokeReceiver {
     }
 
     fn invoke_callback(&self, data: String) {
-        println!("invoke callback");
         let data = Box::new(data);
         let data = Box::into_raw(data);
         unsafe {
@@ -150,7 +149,6 @@ impl WebView {
     }
 
     pub(crate) fn write(&self, document: &str) {
-        println!("writing {}", document);
         let inner = self.inner.as_ref().unwrap();
         unsafe {
             let mut document_dispatch = ptr::null_mut::<c_void>();
@@ -389,7 +387,6 @@ impl IOleClientSite for WebView {
         // dw_which_moniker: OLEWHICHMK_CONTAINER = 1
 
         if dw_assign == 1 || dw_which_moniker == 1 {
-            eprintln!("assign faield");
             E_FAIL
         } else {
             E_NOTIMPL
@@ -643,7 +640,6 @@ impl IDocHostUIHandler for WebView {
         S_FALSE
     }
     unsafe fn get_external(&self, pp_dispatch: *mut *mut c_void /*IDispatch*/) -> HRESULT {
-        println!("get external");
         let inner = self.inner.as_ref().unwrap();
         (*inner.invoke_receiver).add_ref();
         *pp_dispatch = inner.invoke_receiver as _;

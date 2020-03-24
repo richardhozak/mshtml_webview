@@ -369,7 +369,6 @@ unsafe extern "system" fn wndproc(
 
             let data: *mut String = std::mem::transmute(lparam);
             let data = Box::from_raw(data);
-            println!("got data {}", data);
 
             1
         }
